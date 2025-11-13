@@ -25,7 +25,7 @@ const ENV = 'production';
 const TELEGRAM_BOT_TOKEN = '8368699861:AAFVzZdPT_1_TGA7VWL7VQQAdyOyQH-vQm8';
 const TELEGRAM_CHAT_ID = '8254382347';
 
-/ Series configuration
+// Series configuration
 const seriesConfig = {
     274556: {
         name: 'Uzak Sehir',
