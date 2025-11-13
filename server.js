@@ -1,4 +1,4 @@
-// server.js - Production Ready M3U8 Server with Telegram Notifications
+// server.js - Memory-Optimized M3U8 Server
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
@@ -18,7 +18,7 @@ app.use(cors({
 // ============================================
 const FIRESTORE_WEBHOOK = 'https://flixstream.ca/api/webhook/stream-links';
 const REFRESH_INTERVAL = 10; // hours
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 const ENV = 'production';
 
 // Telegram Configuration
@@ -37,46 +37,13 @@ const seriesConfig = {
             2: { startEpisode: 29, count: 8 }
         }
     },
-    74823: {
-        name: 'Cukur',
-        title: 'The Pit',
-        urlPattern: 'https://hds.turkish123.com/cukur-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 33 },
-            2: { startEpisode: 34, count: 34 },
-            3: { startEpisode: 68, count: 25 },
-            4: { startEpisode: 93, count: 39 }
-        }
-    },
-    283123: {
-        name: 'Esref Ruya',
-        title: 'Esref Ruya',
-        urlPattern: 'https://hds.turkish123.com/esref-ruya-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 13 },
-            2: { startEpisode: 14, count: 8 }
-        }
-    },
-    
-   302658: {
+    302658: {
         name: 'Kurlus Orhan',
         title: 'Founder Orhan',
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 2 }
-        }
-    },
-   301693: {
-        name: 'sahtekarlar',
-        title: 'Lovers & Liars',
-        urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 5 }
-            
         }
     },
     300388: {
@@ -87,29 +54,7 @@ const seriesConfig = {
         seasons: {
             1: { startEpisode: 1, count: 5 }
         }
-    },
-    246621: {
-        name: 'Mehmed: Sultan of Conquests',
-        title: 'Mehmed: Sultan of Conquests',
-        urlPattern: 'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 15 },
-            2: { startEpisode: 16, count: 34 },
-            3: { startEpisode: 50, count: 8 }
-          }
-    },
-     302063: {
-        name: 'tasacak-bu-denizr',
-        title: 'Deep in Love',
-        urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 5 }
-          
-        }
     }
-
 };
 
 // ============================================
@@ -120,7 +65,7 @@ const log = {
     success: (msg) => console.log(`✅ [${new Date().toISOString()}] ${msg}`),
     error: (msg) => console.error(`❌ [${new Date().toISOString()}] ${msg}`),
     warn: (msg) => console.warn(`⚠️  [${new Date().toISOString()}] ${msg}`),
-    debug: (msg) => ENV === 'development' && console.log(`🔍 [${new Date().toISOString()}] ${msg}`)
+    debug: (msg) => console.log(`🔍 [${new Date().toISOString()}] ${msg}`)
 };
 
 // ============================================
@@ -151,23 +96,12 @@ async function sendTelegramMessage(message) {
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
-                    if (res.statusCode === 200) {
-                        log.success(`Telegram notification sent`);
-                        resolve(true);
-                    } else {
-                        log.warn(`Telegram returned ${res.statusCode}`);
-                        resolve(false);
-                    }
+                    resolve(res.statusCode === 200);
                 });
             });
 
-            req.on('error', (error) => {
-                log.error(`Error sending Telegram message: ${error.message}`);
-                resolve(false);
-            });
-
+            req.on('error', () => resolve(false));
             req.on('timeout', () => {
-                log.error(`Telegram request timeout`);
                 req.destroy();
                 resolve(false);
             });
@@ -175,78 +109,18 @@ async function sendTelegramMessage(message) {
             req.write(postData);
             req.end();
         } catch (error) {
-            log.error(`Error preparing Telegram request: ${error.message}`);
             resolve(false);
         }
     });
 }
 
 // ============================================
-// PUPPETEER BROWSER POOL
+// BROWSER MANAGEMENT - FRESH INSTANCE PER FETCH
 // ============================================
-let browserPool = [];
-const MAX_BROWSERS = 1;
+// KEY CHANGE: Create new browser for each fetch, close immediately after
+// This prevents memory accumulation from keeping browsers open
 
-async function getBrowser() {
-    if (browserPool.length > 0) {
-        return browserPool.pop();
-    }
-    
-    let launchRetries = 3;
-    while (launchRetries > 0) {
-        try {
-            return await puppeteer.launch({
-                headless: 'new',
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-extensions',
-                    '--disable-background-networking',
-                    '--disable-background-timer-throttling',
-                    '--disable-renderer-backgrounding',
-                    '--disable-breakpad',
-                    '--disable-component-update',
-                    '--disable-sync',
-                    '--metrics-recording-only',
-                    '--mute-audio',
-                    '--disable-web-resources',
-                    '--disable-features=TranslateUI',
-                    '--no-first-run',
-                    '--disable-blink-features=AutomationControlled',
-                ],
-                timeout: 120000,
-                protocolTimeout: 300000
-            });
-        } catch (error) {
-            launchRetries--;
-            if (launchRetries > 0) {
-                log.warn(`Browser launch failed, retrying... (${launchRetries} attempts left)`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-            } else {
-                throw error;
-            }
-        }
-    }
-}
-
-async function returnBrowser(browser) {
-    try {
-        if (browserPool.length < MAX_BROWSERS) {
-            browserPool.push(browser);
-        } else {
-            await browser.close().catch(e => log.debug(`Error closing browser: ${e.message}`));
-        }
-    } catch (error) {
-        log.error(`Error returning browser: ${error.message}`);
-    }
-}
-
-// ============================================
-// PUPPETEER M3U8 FETCHER
-// ============================================
-async function fetchM3u8(movieId, season, episode, retries = 3) {
+async function fetchM3u8(movieId, season, episode, retries = 2) {
     const series = seriesConfig[movieId];
     if (!series) {
         log.error(`Series ${movieId} not found`);
@@ -263,85 +137,114 @@ async function fetchM3u8(movieId, season, episode, retries = 3) {
     const url = series.urlPattern.replace('{episode}', actualEpisodeNumber);
     
     let browser;
+    let page;
+    
     try {
-        browser = await getBrowser();
+        // Launch fresh browser instance
+        browser = await puppeteer.launch({
+            headless: 'new',
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process', // Reduced processes
+                '--disable-background-networking',
+                '--disable-client-side-phishing-detection',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-default-apps',
+                '--disable-default-search-infobar',
+                '--disable-sync',
+                '--disable-popup-blocking',
+                '--disable-plugins',
+                '--mute-audio'
+            ],
+            timeout: 20000
+        });
         
-        const page = await browser.newPage();
-        await page.setDefaultNavigationTimeout(60000);
-        await page.setDefaultTimeout(60000);
+        page = await browser.newPage();
+        
+        // Set memory-conscious timeouts
+        page.setDefaultNavigationTimeout(15000);
+        page.setDefaultTimeout(15000);
+        
+        // Set request interception BEFORE navigation
         await page.setRequestInterception(true);
         
-        const blockedResourceTypes = ['image', 'stylesheet', 'font', 'media', 'other'];
         const videoUrls = [];
         let linkFound = false;
         
+        // Ultra-lightweight request handler
         const handler = (request) => {
-            const urlStr = request.url();
-            const resourceType = request.resourceType();
+            const url = request.url();
+            const type = request.resourceType();
             
-            if (blockedResourceTypes.includes(resourceType)) {
-                return request.abort();
+            // Block everything unnecessary
+            if (['image', 'stylesheet', 'font', 'media', 'websocket', 'manifest'].includes(type)) {
+                request.abort().catch(() => {});
+                return;
             }
             
-            if (resourceType === 'xhr' && request.method() === 'GET') {
-                if (urlStr.includes('.m3u8') || urlStr.includes('stream')) {
-                    videoUrls.push(urlStr);
-                    linkFound = true;
-                    request.continue();
-                    return;
-                }
+            // Capture m3u8 URLs
+            if (type === 'xhr' && url.includes('.m3u8')) {
+                videoUrls.push(url);
+                linkFound = true;
             }
             
-            request.continue();
+            request.continue().catch(() => {});
         };
         
         page.on('request', handler);
         
         try {
             await page.goto(url, {
-                waitUntil: 'networkidle2',
-                timeout: 30000
+                waitUntil: 'networkidle0', // Changed from networkidle2
+                timeout: 15000
             });
         } catch (navError) {
-            log.debug(`Navigation timeout, continuing to check for m3u8...`);
+            log.debug(`Navigation timeout/error, checking for m3u8...`);
         }
         
-        let waitTime = 0;
-        while (!linkFound && waitTime < 5000) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            waitTime += 100;
+        // Wait for m3u8 with timeout
+        let waitCount = 0;
+        while (!linkFound && waitCount < 20) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            waitCount++;
         }
         
         page.off('request', handler);
         
         if (videoUrls.length > 0) {
-            log.debug(`Found m3u8: ${videoUrls[0].substring(0, 80)}...`);
-            await returnBrowser(browser);
+            log.debug(`Found m3u8 for S${season}E${episode}`);
             return videoUrls[0];
         } else {
             if (retries > 0) {
-                log.warn(`No m3u8 found, retrying... (${retries} retries left)`);
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                log.warn(`No m3u8 found, retrying... (${retries} left)`);
+                await new Promise(resolve => setTimeout(resolve, 500));
                 return fetchM3u8(movieId, season, episode, retries - 1);
             }
-            log.error(`Failed to fetch m3u8 after retries`);
-            await returnBrowser(browser);
+            log.error(`Failed to fetch m3u8 after retries for S${season}E${episode}`);
             return null;
         }
         
     } catch (error) {
         log.error(`Error fetching m3u8: ${error.message}`);
-        try {
-            if (browser) {
-                await browser.close().catch(e => log.debug(`Error closing browser: ${e.message}`));
-            }
-        } catch (closeError) {
-            log.debug(`Close error: ${closeError.message}`);
-        }
         if (retries > 0) {
             return fetchM3u8(movieId, season, episode, retries - 1);
         }
         return null;
+    } finally {
+        // CRITICAL: Always close browser and page
+        if (page) {
+            await page.close().catch(() => {});
+        }
+        if (browser) {
+            await browser.close().catch(() => {});
+        }
+        // Force garbage collection hint
+        if (global.gc) global.gc();
     }
 }
 
@@ -361,32 +264,21 @@ async function sendToFirestore(payload) {
                 path: url.pathname + url.search,
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'M3U8-Server/1.0'
+                    'Content-Type': 'application/json'
                 },
-                timeout: 10000
+                timeout: 8000
             };
             
             const req = client.request(options, (res) => {
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
-                    if (res.statusCode >= 200 && res.statusCode < 300) {
-                        resolve(true);
-                    } else {
-                        log.warn(`Firestore webhook returned ${res.statusCode}`);
-                        resolve(false);
-                    }
+                    resolve(res.statusCode >= 200 && res.statusCode < 300);
                 });
             });
             
-            req.on('error', (error) => {
-                log.error(`Error sending to Firestore: ${error.message}`);
-                resolve(false);
-            });
-            
+            req.on('error', () => resolve(false));
             req.on('timeout', () => {
-                log.error(`Firestore webhook timeout`);
                 req.destroy();
                 resolve(false);
             });
@@ -394,7 +286,6 @@ async function sendToFirestore(payload) {
             req.write(JSON.stringify(payload));
             req.end();
         } catch (error) {
-            log.error(`Error preparing Firestore request: ${error.message}`);
             resolve(false);
         }
     });
@@ -407,7 +298,7 @@ let isRefreshing = false;
 
 async function autoRefreshM3u8s() {
     if (isRefreshing) {
-        log.warn(`Refresh already in progress, skipping...`);
+        log.warn(`Refresh already in progress`);
         return;
     }
     
@@ -415,7 +306,7 @@ async function autoRefreshM3u8s() {
     log.info(`🔄 Auto-refresh started`);
     
     const startTime = Date.now();
-    const stats = { success: 0, failed: 0, skipped: 0 };
+    const stats = { success: 0, failed: 0 };
     
     try {
         for (const movieId in seriesConfig) {
@@ -434,11 +325,11 @@ async function autoRefreshM3u8s() {
                                 movieId: parseInt(movieId),
                                 mediaType: series.mediaType,
                                 m3u8Url: m3u8Url,
-                                title: `${series.title} `,
+                                title: `${series.title} S${season}E${ep}`,
                                 season: parseInt(season),
                                 episode: ep,
                                 quality: 'auto',
-                                notes: 'Auto-refreshed by scheduler',
+                                notes: 'Auto-refreshed',
                                 timestamp: new Date().toISOString()
                             };
                             
@@ -447,53 +338,38 @@ async function autoRefreshM3u8s() {
                                 stats.success++;
                                 log.success(`${series.title} S${season}E${ep}`);
                             } else {
-                                stats.skipped++;
-                                log.warn(`Failed to send S${season}E${ep} to Firestore`);
+                                stats.failed++;
                             }
                         } else {
                             stats.failed++;
-                            log.error(`${series.title} S${season}E${ep} - m3u8 fetch failed`);
                         }
                         
-                        await new Promise(resolve => setTimeout(resolve, 100));
+                        await new Promise(resolve => setTimeout(resolve, 200)); // More spacing
                     } catch (error) {
                         stats.failed++;
-                        log.error(`Error processing S${season}E${ep}: ${error.message}`);
+                        log.error(`S${season}E${ep}: ${error.message}`);
                     }
                 }
             }
         }
         
         const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-        log.success(`Auto-refresh completed in ${duration}s | Success: ${stats.success}, Failed: ${stats.failed}, Skipped: ${stats.skipped}`);
+        log.success(`✅ Refresh done: ${stats.success} success, ${stats.failed} failed in ${duration}s`);
         
         const telegramMessage = `
-<b>✅ M3U8 Auto-Refresh Completed</b>
+<b>✅ M3U8 Refresh Completed</b>
 
-<b>Stats:</b>
 ✅ Success: ${stats.success}
 ❌ Failed: ${stats.failed}
-⏭️  Skipped: ${stats.skipped}
-
 ⏱️  Duration: ${duration}s
-🕒 Timestamp: ${new Date().toLocaleString()}
+🕒 ${new Date().toLocaleString()}
         `.trim();
         
         await sendTelegramMessage(telegramMessage);
         
     } catch (error) {
         log.error(`Auto-refresh failed: ${error.message}`);
-        
-        const errorMessage = `
-<b>❌ M3U8 Auto-Refresh Failed</b>
-
-<b>Error:</b>
-${error.message}
-
-🕒 Timestamp: ${new Date().toLocaleString()}
-        `.trim();
-        
-        await sendTelegramMessage(errorMessage);
+        await sendTelegramMessage(`<b>❌ Refresh Failed</b>\n${error.message}`);
     } finally {
         isRefreshing = false;
     }
@@ -502,11 +378,6 @@ ${error.message}
 // ============================================
 // ROUTES
 // ============================================
-
-// Health check
-app.get('/', (req, res) => {
-    res.status(200).send('OK');
-});
 
 app.get('/health', (req, res) => {
     res.json({
@@ -517,73 +388,53 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Fetch single episode
 app.post('/api/fetch-and-save/:movieId/:season/:episode', async (req, res) => {
     try {
         const { movieId, season, episode } = req.params;
         const series = seriesConfig[movieId];
         
         if (!series) {
-            return res.status(404).json({
-                success: false,
-                error: 'Series not found'
-            });
+            return res.status(404).json({ success: false, error: 'Series not found' });
         }
         
-        log.info(`Fetching: movieId=${movieId}, S${season}E${episode}`);
-        
+        log.info(`Fetching: ${movieId} S${season}E${episode}`);
         const m3u8Url = await fetchM3u8(parseInt(movieId), parseInt(season), parseInt(episode));
         
         if (!m3u8Url) {
-            return res.status(500).json({
-                success: false,
-                error: 'Could not fetch m3u8 URL'
-            });
+            return res.status(500).json({ success: false, error: 'Could not fetch m3u8' });
         }
         
         const payload = {
             movieId: parseInt(movieId),
             mediaType: series.mediaType,
             m3u8Url: m3u8Url,
-            title: `${series.title} `,
+            title: `${series.title} S${season}E${episode}`,
             season: parseInt(season),
             episode: parseInt(episode),
             quality: 'auto',
-            notes: 'Manual fetch via API',
             timestamp: new Date().toISOString()
         };
         
         const saved = await sendToFirestore(payload);
-        
-        res.json({
-            success: saved,
-            payload: saved ? payload : null
-        });
+        res.json({ success: saved, payload: saved ? payload : null });
         
     } catch (error) {
-        log.error(`Error in fetch-and-save: ${error.message}`);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        log.error(`Error: ${error.message}`);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// Fetch entire season
 app.post('/api/fetch-all/:movieId/:season', async (req, res) => {
     try {
         const { movieId, season } = req.params;
         const series = seriesConfig[movieId];
         
         if (!series || !series.seasons[season]) {
-            return res.status(404).json({
-                success: false,
-                error: 'Series or season not found'
-            });
+            return res.status(404).json({ success: false, error: 'Series/season not found' });
         }
         
         const episodes = series.seasons[season].count;
-        log.info(`Fetching season: ${series.title} S${season} (${episodes} episodes)`);
+        log.info(`Fetching: ${series.title} S${season} (${episodes} eps)`);
         
         const results = [];
         
@@ -595,11 +446,10 @@ app.post('/api/fetch-all/:movieId/:season', async (req, res) => {
                     movieId: parseInt(movieId),
                     mediaType: series.mediaType,
                     m3u8Url: m3u8Url,
-                    title: `${series.title} `,
+                    title: `${series.title} S${season}E${ep}`,
                     season: parseInt(season),
                     episode: ep,
                     quality: 'auto',
-                    notes: 'Batch fetch via API',
                     timestamp: new Date().toISOString()
                 };
                 
@@ -608,53 +458,31 @@ app.post('/api/fetch-all/:movieId/:season', async (req, res) => {
                 log.success(`S${season}E${ep}`);
             } else {
                 results.push({ episode: ep, success: false });
-                log.error(`S${season}E${ep} failed`);
             }
             
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
         
-        res.json({
-            success: true,
-            season: season,
-            results: results
-        });
+        res.json({ success: true, season, results });
         
     } catch (error) {
-        log.error(`Error in fetch-all: ${error.message}`);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        log.error(`Error: ${error.message}`);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// Trigger manual refresh
 app.post('/api/refresh', async (req, res) => {
     if (isRefreshing) {
-        return res.status(429).json({
-            success: false,
-            error: 'Refresh already in progress'
-        });
+        return res.status(429).json({ success: false, error: 'Already refreshing' });
     }
     
-    autoRefreshM3u8s().catch(error => log.error(`Refresh error: ${error.message}`));
-    
-    res.json({
-        success: true,
-        message: 'Refresh started'
-    });
+    autoRefreshM3u8s().catch(err => log.error(`Refresh error: ${err.message}`));
+    res.json({ success: true, message: 'Refresh started' });
 });
 
-// ============================================
-// ERROR HANDLING
-// ============================================
-app.use((err, req, res, next) => {
-    log.error(`Unhandled error: ${err.message}`);
-    res.status(500).json({
-        success: false,
-        error: 'Internal server error'
-    });
+app.use((err, req, res) => {
+    log.error(`Error: ${err.message}`);
+    res.status(500).json({ success: false, error: 'Internal error' });
 });
 
 // ============================================
@@ -662,27 +490,23 @@ app.use((err, req, res, next) => {
 // ============================================
 const server = app.listen(PORT, () => {
     log.info(`═══════════════════════════════════════`);
-    log.info(`🚀 M3U8 Server Started`);
-    log.info(`Environment: ${ENV}`);
+    log.info(`🚀 M3U8 Server (Memory-Optimized)`);
     log.info(`Port: ${PORT}`);
-    log.info(`Refresh Interval: ${REFRESH_INTERVAL} hours`);
-    log.info(`Firestore Webhook: ${FIRESTORE_WEBHOOK}`);
-    log.info(`Telegram: ${TELEGRAM_BOT_TOKEN ? '✅ Enabled' : '❌ Disabled'}`);
+    log.info(`Refresh Interval: ${REFRESH_INTERVAL}h`);
     log.info(`═══════════════════════════════════════`);
     
-    setImmediate(() => {
-        autoRefreshM3u8s().catch(error => log.error(`Initial refresh error: ${error.message}`));
-    });
+    setTimeout(() => {
+        autoRefreshM3u8s().catch(err => log.error(`Initial refresh error: ${err.message}`));
+    }, 5000);
     
     setInterval(() => {
-        autoRefreshM3u8s().catch(error => log.error(`Scheduled refresh error: ${error.message}`));
+        autoRefreshM3u8s().catch(err => log.error(`Scheduled refresh error: ${err.message}`));
     }, REFRESH_INTERVAL * 60 * 60 * 1000);
 });
 
-// Graceful shutdown
 process.on('SIGTERM', async () => {
-    log.info('SIGTERM received, shutting down gracefully...');
-    server.close(async () => {
+    log.info('Shutting down gracefully...');
+    server.close(() => {
         log.info('Server closed');
         process.exit(0);
     });
