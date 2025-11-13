@@ -25,7 +25,7 @@ const ENV = 'production';
 const TELEGRAM_BOT_TOKEN = '8368699861:AAFVzZdPT_1_TGA7VWL7VQQAdyOyQH-vQm8';
 const TELEGRAM_CHAT_ID = '8254382347';
 
-// Series configuration
+/ Series configuration
 const seriesConfig = {
     274556: {
         name: 'Uzak Sehir',
@@ -37,13 +37,46 @@ const seriesConfig = {
             2: { startEpisode: 29, count: 8 }
         }
     },
-    302658: {
+    74823: {
+        name: 'Cukur',
+        title: 'The Pit',
+        urlPattern: 'https://hds.turkish123.com/cukur-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 33 },
+            2: { startEpisode: 34, count: 34 },
+            3: { startEpisode: 68, count: 25 },
+            4: { startEpisode: 93, count: 39 }
+        }
+    },
+    283123: {
+        name: 'Esref Ruya',
+        title: 'Esref Ruya',
+        urlPattern: 'https://hds.turkish123.com/esref-ruya-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 13 },
+            2: { startEpisode: 14, count: 8 }
+        }
+    },
+    
+   302658: {
         name: 'Kurlus Orhan',
         title: 'Founder Orhan',
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 2 }
+        }
+    },
+   301693: {
+        name: 'sahtekarlar',
+        title: 'Lovers & Liars',
+        urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 5 }
+            
         }
     },
     300388: {
@@ -54,7 +87,29 @@ const seriesConfig = {
         seasons: {
             1: { startEpisode: 1, count: 5 }
         }
+    },
+    246621: {
+        name: 'Mehmed: Sultan of Conquests',
+        title: 'Mehmed: Sultan of Conquests',
+        urlPattern: 'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 15 },
+            2: { startEpisode: 16, count: 34 },
+            3: { startEpisode: 50, count: 8 }
+          }
+    },
+     302063: {
+        name: 'tasacak-bu-denizr',
+        title: 'Deep in Love',
+        urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 5 }
+          
+        }
     }
+
 };
 
 // ============================================
