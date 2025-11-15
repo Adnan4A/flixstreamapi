@@ -1,4 +1,4 @@
-// server.js - Memory-Optimized M3U8 Server
+// server.js - Memory-Optimized M3U8 Server with Auto-Restart
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
@@ -59,8 +59,7 @@ const seriesConfig = {
             2: { startEpisode: 14, count: 8 }
         }
     },
-    
-   302658: {
+    302658: {
         name: 'Kurlus Orhan',
         title: 'Founder Orhan',
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
@@ -69,14 +68,13 @@ const seriesConfig = {
             1: { startEpisode: 1, count: 2 }
         }
     },
-   301693: {
+    301693: {
         name: 'sahtekarlar',
         title: 'Lovers & Liars',
         urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 5 }
-            
         }
     },
     300388: {
@@ -97,19 +95,17 @@ const seriesConfig = {
             1: { startEpisode: 1, count: 15 },
             2: { startEpisode: 16, count: 34 },
             3: { startEpisode: 50, count: 8 }
-          }
+        }
     },
-     302063: {
+    302063: {
         name: 'tasacak-bu-denizr',
         title: 'Deep in Love',
         urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 5 }
-          
         }
     }
-
 };
 
 // ============================================
@@ -172,9 +168,6 @@ async function sendTelegramMessage(message) {
 // ============================================
 // BROWSER MANAGEMENT - FRESH INSTANCE PER FETCH
 // ============================================
-// KEY CHANGE: Create new browser for each fetch, close immediately after
-// This prevents memory accumulation from keeping browsers open
-
 async function fetchM3u8(movieId, season, episode, retries = 2) {
     const series = seriesConfig[movieId];
     if (!series) {
@@ -195,7 +188,6 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
     let page;
     
     try {
-        // Launch fresh browser instance
         browser = await puppeteer.launch({
             headless: 'new',
             args: [
@@ -205,7 +197,7 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
                 '--disable-gpu',
                 '--no-first-run',
                 '--no-zygote',
-                '--single-process', // Reduced processes
+                '--single-process',
                 '--disable-background-networking',
                 '--disable-client-side-phishing-detection',
                 '--disable-component-extensions-with-background-pages',
@@ -220,29 +212,22 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
         });
         
         page = await browser.newPage();
-        
-        // Set memory-conscious timeouts
         page.setDefaultNavigationTimeout(15000);
         page.setDefaultTimeout(15000);
-        
-        // Set request interception BEFORE navigation
         await page.setRequestInterception(true);
         
         const videoUrls = [];
         let linkFound = false;
         
-        // Ultra-lightweight request handler
         const handler = (request) => {
             const url = request.url();
             const type = request.resourceType();
             
-            // Block everything unnecessary
             if (['image', 'stylesheet', 'font', 'media', 'websocket', 'manifest'].includes(type)) {
                 request.abort().catch(() => {});
                 return;
             }
             
-            // Capture m3u8 URLs
             if (type === 'xhr' && url.includes('.m3u8')) {
                 videoUrls.push(url);
                 linkFound = true;
@@ -255,14 +240,13 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
         
         try {
             await page.goto(url, {
-                waitUntil: 'networkidle0', // Changed from networkidle2
+                waitUntil: 'networkidle0',
                 timeout: 15000
             });
         } catch (navError) {
             log.debug(`Navigation timeout/error, checking for m3u8...`);
         }
         
-        // Wait for m3u8 with timeout
         let waitCount = 0;
         while (!linkFound && waitCount < 20) {
             await new Promise(resolve => setTimeout(resolve, 50));
@@ -291,14 +275,12 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
         }
         return null;
     } finally {
-        // CRITICAL: Always close browser and page
         if (page) {
             await page.close().catch(() => {});
         }
         if (browser) {
             await browser.close().catch(() => {});
         }
-        // Force garbage collection hint
         if (global.gc) global.gc();
     }
 }
@@ -347,18 +329,18 @@ async function sendToFirestore(payload) {
 }
 
 // ============================================
-// AUTO-REFRESH SCHEDULER
+// AUTO-REFRESH SCHEDULER WITH AUTO-RESTART
 // ============================================
 let isRefreshing = false;
 
-async function autoRefreshM3u8s() {
+async function autoRefreshM3u8s(isManual = false) {
     if (isRefreshing) {
         log.warn(`Refresh already in progress`);
-        return;
+        return { success: false, error: 'Already refreshing' };
     }
     
     isRefreshing = true;
-    log.info(`🔄 Auto-refresh started`);
+    log.info(`🔄 ${isManual ? 'Manual' : 'Auto'} refresh started`);
     
     const startTime = Date.now();
     const stats = { success: 0, failed: 0 };
@@ -384,7 +366,7 @@ async function autoRefreshM3u8s() {
                                 season: parseInt(season),
                                 episode: ep,
                                 quality: 'auto',
-                                notes: 'Auto-refreshed',
+                                notes: isManual ? 'Manual refresh' : 'Auto-refreshed',
                                 timestamp: new Date().toISOString()
                             };
                             
@@ -399,7 +381,7 @@ async function autoRefreshM3u8s() {
                             stats.failed++;
                         }
                         
-                        await new Promise(resolve => setTimeout(resolve, 200)); // More spacing
+                        await new Promise(resolve => setTimeout(resolve, 200));
                     } catch (error) {
                         stats.failed++;
                         log.error(`S${season}E${ep}: ${error.message}`);
@@ -414,17 +396,35 @@ async function autoRefreshM3u8s() {
         const telegramMessage = `
 <b>✅ M3U8 Refresh Completed</b>
 
+Type: ${isManual ? '🔧 Manual' : '⏰ Scheduled'}
 ✅ Success: ${stats.success}
 ❌ Failed: ${stats.failed}
 ⏱️  Duration: ${duration}s
 🕒 ${new Date().toLocaleString()}
+🔄 Container restarting for fresh environment...
         `.trim();
         
         await sendTelegramMessage(telegramMessage);
         
+        // Auto-restart after successful refresh
+        log.info('🔄 Triggering container restart for fresh environment...');
+        setTimeout(() => {
+            process.exit(0); // Railway will auto-restart
+        }, 2000);
+        
+        return { success: true, stats, duration };
+        
     } catch (error) {
-        log.error(`Auto-refresh failed: ${error.message}`);
-        await sendTelegramMessage(`<b>❌ Refresh Failed</b>\n${error.message}`);
+        log.error(`Refresh failed: ${error.message}`);
+        await sendTelegramMessage(`<b>❌ Refresh Failed</b>\n${error.message}\n🔄 Restarting...`);
+        
+        // Restart even on failure to clear any stuck state
+        log.info('🔄 Restarting after error...');
+        setTimeout(() => {
+            process.exit(1);
+        }, 2000);
+        
+        return { success: false, error: error.message };
     } finally {
         isRefreshing = false;
     }
@@ -439,7 +439,17 @@ app.get('/health', (req, res) => {
         status: 'ok',
         environment: ENV,
         timestamp: new Date().toISOString(),
-        isRefreshing
+        isRefreshing,
+        uptime: process.uptime()
+    });
+});
+
+app.get('/api/status', (req, res) => {
+    res.json({
+        isRefreshing,
+        uptime: process.uptime(),
+        nextRefresh: isRefreshing ? 'In progress' : 'On schedule',
+        message: isRefreshing ? 'Refresh in progress - server will restart soon' : 'Ready'
     });
 });
 
@@ -528,48 +538,87 @@ app.post('/api/fetch-all/:movieId/:season', async (req, res) => {
 
 app.post('/api/refresh', async (req, res) => {
     if (isRefreshing) {
-        return res.status(429).json({ success: false, error: 'Already refreshing' });
+        return res.status(429).json({ 
+            success: false, 
+            error: 'Refresh already in progress. Please wait.' 
+        });
     }
     
-    autoRefreshM3u8s().catch(err => log.error(`Refresh error: ${err.message}`));
-    res.json({ success: true, message: 'Refresh started' });
+    // Respond immediately so client doesn't wait for restart
+    res.json({ 
+        success: true, 
+        message: 'Manual refresh started. Server will restart after completion for fresh environment.' 
+    });
+    
+    // Start refresh async
+    autoRefreshM3u8s(true).catch(err => {
+        log.error(`Manual refresh error: ${err.message}`);
+    });
 });
 
-app.use((err, req, res) => {
+app.use((err, req, res, next) => {
     log.error(`Error: ${err.message}`);
     res.status(500).json({ success: false, error: 'Internal error' });
 });
 
 // ============================================
-// STARTUP
+// STARTUP WITH AUTO-RESTART
 // ============================================
 const server = app.listen(PORT, () => {
     log.info(`═══════════════════════════════════════`);
-    log.info(`🚀 M3U8 Server (Memory-Optimized)`);
+    log.info(`🚀 M3U8 Server (Memory-Optimized + Auto-Restart)`);
     log.info(`Port: ${PORT}`);
     log.info(`Refresh Interval: ${REFRESH_INTERVAL}h`);
+    log.info(`Uptime: ${process.uptime()}s`);
     log.info(`═══════════════════════════════════════`);
     
+    // Initial refresh after 5 seconds
     setTimeout(() => {
-        autoRefreshM3u8s().catch(err => log.error(`Initial refresh error: ${err.message}`));
+        log.info('Starting initial refresh...');
+        autoRefreshM3u8s(false).catch(err => {
+            log.error(`Initial refresh error: ${err.message}`);
+            setTimeout(() => process.exit(1), 2000);
+        });
     }, 5000);
     
+    // Scheduled refresh every X hours
     setInterval(() => {
-        autoRefreshM3u8s().catch(err => log.error(`Scheduled refresh error: ${err.message}`));
+        if (!isRefreshing) {
+            log.info('Starting scheduled refresh...');
+            autoRefreshM3u8s(false).catch(err => {
+                log.error(`Scheduled refresh error: ${err.message}`);
+                setTimeout(() => process.exit(1), 2000);
+            });
+        } else {
+            log.warn('Skipping scheduled refresh - already in progress');
+        }
     }, REFRESH_INTERVAL * 60 * 60 * 1000);
 });
 
+// Graceful shutdown
 process.on('SIGTERM', async () => {
-    log.info('Shutting down gracefully...');
+    log.info('Received SIGTERM - shutting down gracefully...');
     server.close(() => {
         log.info('Server closed');
         process.exit(0);
     });
     
     setTimeout(() => {
-        log.error('Forced shutdown');
+        log.error('Forced shutdown after timeout');
         process.exit(1);
     }, 30000);
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (err) => {
+    log.error(`Uncaught Exception: ${err.message}`);
+    sendTelegramMessage(`<b>⚠️ Server Error</b>\n${err.message}`);
+    setTimeout(() => process.exit(1), 2000);
+});
+
+process.on('unhandledRejection', (reason) => {
+    log.error(`Unhandled Rejection: ${reason}`);
+    sendTelegramMessage(`<b>⚠️ Unhandled Rejection</b>\n${reason}`);
 });
 
 module.exports = { app, fetchM3u8, sendToFirestore, sendTelegramMessage };
