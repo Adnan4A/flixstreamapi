@@ -1,9 +1,10 @@
-// server.js - Memory-Optimized M3U8 Server with Auto-Restart
+// server.js - Memory-Optimized M3U8 Server with Enhanced Cleanup
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 const https = require('https');
 const http = require('http');
+const { exec } = require('child_process');
 
 const app = express();
 app.use(express.json());
@@ -52,17 +53,6 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 6 }
-        }
-    },
-    246621: {
-        name: 'Mehmed: Sultan of Conquests',
-        title: 'Mehmed: Sultan of Conquests',
-        urlPattern: 'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 15 },
-            2: { startEpisode: 16, count: 34 },
-            3: { startEpisode: 50, count: 8 }
         }
     },
     302063: {
@@ -134,6 +124,41 @@ async function sendTelegramMessage(message) {
 }
 
 // ============================================
+// FORCE BROWSER CLEANUP
+// ============================================
+async function forceCleanupBrowsers() {
+    try {
+        log.info('🧹 Starting aggressive browser cleanup...');
+        
+        // Force garbage collection multiple times
+        if (global.gc) {
+            global.gc();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            global.gc();
+            await new Promise(resolve => setTimeout(resolve, 100));
+            global.gc();
+        }
+        
+        // Kill any lingering Chrome/Chromium processes
+        await new Promise((resolve) => {
+            exec('pkill -9 chrome || pkill -9 chromium || true', (error) => {
+                if (error) {
+                    log.debug(`Process kill attempt: ${error.message}`);
+                }
+                resolve();
+            });
+        });
+        
+        // Wait for processes to fully terminate
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        log.success('🧹 Browser cleanup completed');
+    } catch (error) {
+        log.warn(`Cleanup warning: ${error.message}`);
+    }
+}
+
+// ============================================
 // BROWSER MANAGEMENT - FRESH INSTANCE PER FETCH
 // ============================================
 async function fetchM3u8(movieId, season, episode, retries = 2) {
@@ -155,90 +180,108 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
     let browser;
     let page;
     
+    // Timeout wrapper to prevent hanging
+    const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Browser operation timeout')), 30000)
+    );
+    
     try {
-        browser = await puppeteer.launch({
-            headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--no-first-run',
-                '--no-zygote',
-                '--single-process',
-                '--disable-background-networking',
-                '--disable-client-side-phishing-detection',
-                '--disable-component-extensions-with-background-pages',
-                '--disable-default-apps',
-                '--disable-default-search-infobar',
-                '--disable-sync',
-                '--disable-popup-blocking',
-                '--disable-plugins',
-                '--mute-audio'
-            ],
-            timeout: 20000
-        });
-        
-        page = await browser.newPage();
-        page.setDefaultNavigationTimeout(15000);
-        page.setDefaultTimeout(15000);
-        await page.setRequestInterception(true);
-        
-        const videoUrls = [];
-        let linkFound = false;
-        
-        const handler = (request) => {
-            const url = request.url();
-            const type = request.resourceType();
-            
-            if (['image', 'stylesheet', 'font', 'media', 'websocket', 'manifest'].includes(type)) {
-                request.abort().catch(() => {});
-                return;
-            }
-            
-            if (type === 'xhr' && url.includes('.m3u8')) {
-                videoUrls.push(url);
-                linkFound = true;
-            }
-            
-            request.continue().catch(() => {});
-        };
-        
-        page.on('request', handler);
-        
-        try {
-            await page.goto(url, {
-                waitUntil: 'networkidle0',
-                timeout: 15000
-            });
-        } catch (navError) {
-            log.debug(`Navigation timeout/error, checking for m3u8...`);
-        }
-        
-        let waitCount = 0;
-        while (!linkFound && waitCount < 20) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-            waitCount++;
-        }
-        
-        page.off('request', handler);
-        
-        if (videoUrls.length > 0) {
-            log.debug(`Found m3u8 for S${season}E${episode}`);
-            return videoUrls[0];
-        } else {
-            if (retries > 0) {
-                log.warn(`No m3u8 found, retrying... (${retries} left)`);
-                await new Promise(resolve => setTimeout(resolve, 500));
-                return fetchM3u8(movieId, season, episode, retries - 1);
-            }
-            log.error(`Failed to fetch m3u8 after retries for S${season}E${episode}`);
-            return null;
-        }
+        await Promise.race([
+            (async () => {
+                browser = await puppeteer.launch({
+                    headless: 'new',
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--single-process',
+                        '--disable-background-networking',
+                        '--disable-client-side-phishing-detection',
+                        '--disable-component-extensions-with-background-pages',
+                        '--disable-default-apps',
+                        '--disable-default-search-infobar',
+                        '--disable-sync',
+                        '--disable-popup-blocking',
+                        '--disable-plugins',
+                        '--mute-audio',
+                        '--disable-features=site-per-process'
+                    ],
+                    timeout: 20000
+                });
+                
+                page = await browser.newPage();
+                page.setDefaultNavigationTimeout(15000);
+                page.setDefaultTimeout(15000);
+                await page.setRequestInterception(true);
+                
+                const videoUrls = [];
+                let linkFound = false;
+                
+                const handler = (request) => {
+                    const url = request.url();
+                    const type = request.resourceType();
+                    
+                    if (['image', 'stylesheet', 'font', 'media', 'websocket', 'manifest'].includes(type)) {
+                        request.abort().catch(() => {});
+                        return;
+                    }
+                    
+                    if (type === 'xhr' && url.includes('.m3u8')) {
+                        videoUrls.push(url);
+                        linkFound = true;
+                    }
+                    
+                    request.continue().catch(() => {});
+                };
+                
+                page.on('request', handler);
+                
+                try {
+                    await page.goto(url, {
+                        waitUntil: 'networkidle0',
+                        timeout: 15000
+                    });
+                } catch (navError) {
+                    log.debug(`Navigation timeout/error, checking for m3u8...`);
+                }
+                
+                let waitCount = 0;
+                while (!linkFound && waitCount < 20) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    waitCount++;
+                }
+                
+                page.off('request', handler);
+                
+                if (videoUrls.length > 0) {
+                    log.debug(`Found m3u8 for S${season}E${episode}`);
+                    return videoUrls[0];
+                } else {
+                    if (retries > 0) {
+                        log.warn(`No m3u8 found, retrying... (${retries} left)`);
+                        // Force cleanup before retry
+                        if (page) await page.close().catch(() => {});
+                        if (browser) await browser.close().catch(() => {});
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        return fetchM3u8(movieId, season, episode, retries - 1);
+                    }
+                    log.error(`Failed to fetch m3u8 after retries for S${season}E${episode}`);
+                    return null;
+                }
+            })(),
+            timeoutPromise
+        ]);
         
     } catch (error) {
         log.error(`Error fetching m3u8: ${error.message}`);
         if (retries > 0) {
+            // Force cleanup before retry
+            if (page) await page.close().catch(() => {});
+            if (browser) await browser.close().catch(() => {});
+            await new Promise(resolve => setTimeout(resolve, 1000));
             return fetchM3u8(movieId, season, episode, retries - 1);
         }
         return null;
@@ -248,6 +291,8 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
         }
         if (browser) {
             await browser.close().catch(() => {});
+            // Wait for browser to fully close
+            await new Promise(resolve => setTimeout(resolve, 500));
         }
         if (global.gc) global.gc();
     }
@@ -374,10 +419,14 @@ Type: ${isManual ? '🔧 Manual' : '⏰ Scheduled'}
         
         await sendTelegramMessage(telegramMessage);
         
-        // Auto-restart after successful refresh
+        // Force cleanup all browsers before restart
+        log.info('🧹 Cleaning up all browser processes...');
+        await forceCleanupBrowsers();
+        
+        // Auto-restart after successful refresh with exit code 1 to trigger Railway restart
         log.info('🔄 Triggering container restart for fresh environment...');
         setTimeout(() => {
-            process.exit(0); // Railway will auto-restart
+            process.exit(1); // Railway will auto-restart on error exit
         }, 2000);
         
         return { success: true, stats, duration };
@@ -386,7 +435,8 @@ Type: ${isManual ? '🔧 Manual' : '⏰ Scheduled'}
         log.error(`Refresh failed: ${error.message}`);
         await sendTelegramMessage(`<b>❌ Refresh Failed</b>\n${error.message}\n🔄 Restarting...`);
         
-        // Restart even on failure to clear any stuck state
+        // Cleanup and restart even on failure
+        await forceCleanupBrowsers();
         log.info('🔄 Restarting after error...');
         setTimeout(() => {
             process.exit(1);
@@ -534,7 +584,7 @@ app.use((err, req, res, next) => {
 // ============================================
 const server = app.listen(PORT, () => {
     log.info(`═══════════════════════════════════════`);
-    log.info(`🚀 M3U8 Server (Memory-Optimized + Auto-Restart)`);
+    log.info(`🚀 M3U8 Server (Enhanced Cleanup + Auto-Restart)`);
     log.info(`Port: ${PORT}`);
     log.info(`Refresh Interval: ${REFRESH_INTERVAL}h`);
     log.info(`Uptime: ${process.uptime()}s`);
@@ -566,6 +616,7 @@ const server = app.listen(PORT, () => {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
     log.info('Received SIGTERM - shutting down gracefully...');
+    await forceCleanupBrowsers();
     server.close(() => {
         log.info('Server closed');
         process.exit(0);
