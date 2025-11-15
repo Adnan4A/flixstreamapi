@@ -17,7 +17,7 @@ app.use(cors({
 // CONFIGURATION
 // ============================================
 const FIRESTORE_WEBHOOK = 'https://flixstream.ca/api/webhook/stream-links';
-const REFRESH_INTERVAL = 10; // hours
+const REFRESH_INTERVAL = 1; // hours
 const PORT = process.env.PORT || 3000;
 const ENV = 'production';
 
@@ -27,45 +27,13 @@ const TELEGRAM_CHAT_ID = '8254382347';
 
 // Series configuration
 const seriesConfig = {
-    274556: {
-        name: 'Uzak Sehir',
-        title: 'Far Away',
-        urlPattern: 'https://hds.turkish123.com/uzak-sehir-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 28 },
-            2: { startEpisode: 29, count: 8 }
-        }
-    },
-    74823: {
-        name: 'Cukur',
-        title: 'The Pit',
-        urlPattern: 'https://hds.turkish123.com/cukur-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 33 },
-            2: { startEpisode: 34, count: 34 },
-            3: { startEpisode: 68, count: 25 },
-            4: { startEpisode: 93, count: 39 }
-        }
-    },
-    283123: {
-        name: 'Esref Ruya',
-        title: 'Esref Ruya',
-        urlPattern: 'https://hds.turkish123.com/esref-ruya-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 13 },
-            2: { startEpisode: 14, count: 8 }
-        }
-    },
     302658: {
         name: 'Kurlus Orhan',
         title: 'Founder Orhan',
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 2 }
+            1: { startEpisode: 1, count: 3 }
         }
     },
     301693: {
@@ -74,7 +42,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 5 }
+            1: { startEpisode: 1, count: 6 }
         }
     },
     300388: {
@@ -83,7 +51,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 5 }
+            1: { startEpisode: 1, count: 6 }
         }
     },
     246621: {
@@ -103,7 +71,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 5 }
+            1: { startEpisode: 1, count: 6 }
         }
     }
 };
