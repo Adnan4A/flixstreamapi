@@ -18,7 +18,7 @@ app.use(cors({
 // CONFIGURATION
 // ============================================
 const FIRESTORE_WEBHOOK = 'https://flixstream.ca/api/webhook/stream-links';
-const REFRESH_INTERVAL = 1; // hours
+const REFRESH_INTERVAL = 10; // hours
 const PORT = process.env.PORT || 3000;
 const ENV = 'production';
 
