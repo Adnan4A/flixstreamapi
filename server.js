@@ -159,7 +159,7 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
     );
     
     try {
-        await Promise.race([
+        const result = await Promise.race([
             (async () => {
                 browser = await puppeteer.launch({
                     headless: 'new',
@@ -247,6 +247,9 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
             })(),
             timeoutPromise
         ]);
+        
+        // Return the result from Promise.race
+        return result;
         
     } catch (error) {
         log.error(`Error fetching m3u8: ${error.message}`);
