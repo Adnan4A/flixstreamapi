@@ -1,4 +1,4 @@
-// server.js - Memory-Optimized M3U8 Server with FULL LOGGING
+// server.js - FINAL: No Double Refresh | Wait 1hr | Full Logs | Railway Safe
 const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
@@ -28,6 +28,10 @@ const TELEGRAM_CHAT_ID = '8254382347';
 
 // Series configuration
 const seriesConfig = {
+    302658: { name: 'Kurlus Orhan', title: 'Founder Orhan', urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/', mediaType: 'tv', seasons: { 1: { startEpisode: 1, count: 3 } } },
+    301693: { name: 'sahtekarlar', title: 'Lovers & Liars', urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/', mediaType: 'tv', seasons: { 1: { startEpisode: 1, count: 6 } } },
+    300388: { name: 'guller-ve-gunahlar', title: 'Sins and Roses', urlPattern: 'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/', mediaType: 'tv', seasons: { 1: { startEpisode: 1, count: 6 } } },
+    246621: { name: 'Mehmed: Sultan of Conquests', title: 'Mehmed: Sultan of Conquests', urlPattern: 'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/', mediaType: 'tv', seasons: { 1: { startEpisode: 1, count: 15 }, 2: { startEpisode: 16, count: 34 }, 3: { startEpisode: 50, count: 8 } } },
     302063: { name: 'tasacak-bu-denizr', title: 'Deep in Love', urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/', mediaType: 'tv', seasons: { 1: { startEpisode: 1, count: 6 } } }
 };
 
@@ -90,7 +94,7 @@ async function forceCleanupBrowsers() {
 }
 
 // ============================================
-// BROWSER MANAGEMENT - FULL LOGGING
+// BROWSER MANAGEMENT - FULL LOGGING & CONCURRENCY
 // ============================================
 const activeBrowsers = new Set();
 
@@ -176,7 +180,6 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
                     log.debug(`Navigation timeout, still checking for m3u8...`);
                 }
 
-                // Fallback: video tag
                 const videoSrc = await page.evaluate(() => {
                     const video = document.querySelector('video');
                     return video ? video.src : null;
@@ -259,7 +262,7 @@ async function sendToFirestore(payload) {
 }
 
 // ============================================
-// AUTO-REFRESH WITH FULL LOGGING
+// AUTO-REFRESH WITH FULL LOGGING & IMMEDIATE EXIT
 // ============================================
 let isRefreshing = false;
 let lastRefreshTime = null;
@@ -328,7 +331,6 @@ async function autoRefreshM3u8s(isManual = false) {
         log.success(`✅ Refresh done: ${stats.success} success, ${stats.failed} failed in ${duration}s`);
 
         lastRefreshTime = new Date();
-        nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL * 60 * 60 * 1000);
 
         const telegramMessage = `
 <b>✅ M3U8 Refresh Completed</b>
@@ -337,22 +339,27 @@ Type: ${isManual ? 'Manual' : 'Scheduled'}
 ❌ Failed: ${stats.failed}
 ⏱️ Duration: ${duration}s
 🕒 ${new Date().toLocaleString()}
-🔄 Container restarting for fresh environment...
+🔄 Container restarting NOW...
         `.trim();
 
-        await sendTelegramMessage(telegramMessage);
+        // SEND TELEGRAM
+        const tgSent = await sendTelegramMessage(telegramMessage);
+        log[tgSent ? 'success' : 'error'](`Telegram: ${tgSent ? 'sent' : 'failed'}`);
+
+        // CLEANUP
         await forceCleanupBrowsers();
+        log.success('Browser cleanup complete');
 
-        log.info('🔄 Triggering container restart...');
-        setTimeout(() => process.exit(1), 7000);
+        // EXIT IMMEDIATELY
+        log.info('EXITING NOW → Railway will restart in <10s');
+        process.exit(1); // ← FINAL FIX: NO DELAY
 
-        return { success: true, stats, duration };
     } catch (error) {
         log.error(`Refresh failed: ${error.message}`);
-        await sendTelegramMessage(`<b>❌ Refresh Failed</b>\n${error.message}\n🔄 Restarting...`);
+        await sendTelegramMessage(`<b>❌ Refresh Failed</b>\n${error.message}`).catch(() => {});
         await forceCleanupBrowsers();
-        setTimeout(() => process.exit(1), 7000);
-        return { success: false, error: error.message };
+        log.info('EXITING ON ERROR...');
+        process.exit(1); // ← FINAL FIX: NO DELAY
     } finally {
         isRefreshing = false;
     }
@@ -445,7 +452,7 @@ const server = app.listen(PORT, async () => {
             log.info('⏰ Starting scheduled refresh...');
             autoRefreshM3u8s(false).catch(err => {
                 log.error(`Scheduled refresh error: ${err.message}`);
-                setTimeout(() => process.exit(1), 2000);
+                process.exit(1);
             });
         } else {
             log.warn('Skipping scheduled refresh - already in progress');
@@ -464,7 +471,7 @@ process.on('SIGTERM', async () => {
 process.on('uncaughtException', (err) => {
     log.error(`Uncaught Exception: ${err.message}`);
     sendTelegramMessage(`<b>⚠️ Server Error</b>\n${err.message}`);
-    setTimeout(() => process.exit(1), 2000);
+    process.exit(1);
 });
 
 process.on('unhandledRejection', (reason) => {
