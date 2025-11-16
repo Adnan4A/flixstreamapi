@@ -36,44 +36,6 @@ const seriesConfig = {
         seasons: {
             1: { startEpisode: 1, count: 3 }
         }
-    },
-    301693: {
-        name: 'sahtekarlar',
-        title: 'Lovers & Liars',
-        urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 6 }
-        }
-    },
-    300388: {
-        name: 'guller-ve-gunahlar',
-        title: 'Sins and Roses',
-        urlPattern: 'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 6 }
-        }
-    },
-    246621: {
-        name: 'Mehmed: Sultan of Conquests',
-        title: 'Mehmed: Sultan of Conquests',
-        urlPattern: 'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 15 },
-            2: { startEpisode: 16, count: 34 },
-            3: { startEpisode: 50, count: 8 }
-        }
-    },
-    302063: {
-        name: 'tasacak-bu-denizr',
-        title: 'Deep in Love',
-        urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
-        mediaType: 'tv',
-        seasons: {
-            1: { startEpisode: 1, count: 6 }
-        }
     }
 };
 
@@ -197,7 +159,7 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
     );
     
     try {
-        const result = await Promise.race([
+        await Promise.race([
             (async () => {
                 browser = await puppeteer.launch({
                     headless: 'new',
@@ -286,7 +248,6 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
             timeoutPromise
         ]);
         
-        return result;
     } catch (error) {
         log.error(`Error fetching m3u8: ${error.message}`);
         if (retries > 0) {
@@ -359,6 +320,8 @@ async function sendToFirestore(payload) {
 let isRefreshing = false;
 let lastRefreshTime = null;
 let nextRefreshTime = null;
+const fs = require('fs');
+const REFRESH_MARKER_FILE = '/tmp/last_refresh_time.txt';
 
 async function autoRefreshM3u8s(isManual = false) {
     if (isRefreshing) {
@@ -423,6 +386,13 @@ async function autoRefreshM3u8s(isManual = false) {
         // Update last refresh time
         lastRefreshTime = new Date();
         nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL * 60 * 60 * 1000);
+        
+        // Save refresh timestamp to file (persists across restarts)
+        try {
+            fs.writeFileSync(REFRESH_MARKER_FILE, Date.now().toString());
+        } catch (err) {
+            log.warn(`Could not save refresh marker: ${err.message}`);
+        }
         
         const telegramMessage = `
 <b>✅ M3U8 Refresh Completed</b>
@@ -603,28 +573,6 @@ app.post('/api/fetch-all/:movieId/:season', async (req, res) => {
     }
 });
 
-// New GET route for /api/refresh to handle direct browser access
-app.get('/api/refresh', async (req, res) => {
-    if (isRefreshing) {
-        return res.status(429).json({ 
-            success: false, 
-            error: 'Refresh already in progress. Please wait.' 
-        });
-    }
-    
-    // Respond immediately so client doesn't wait for restart
-    res.json({ 
-        success: true, 
-        message: 'Manual refresh started via GET. Server will restart after completion for fresh environment.' 
-    });
-    
-    // Start refresh async
-    autoRefreshM3u8s(true).catch(err => {
-        log.error(`Manual refresh error (GET): ${err.message}`);
-    });
-});
-
-
 app.post('/api/refresh', async (req, res) => {
     if (isRefreshing) {
         return res.status(429).json({ 
@@ -641,7 +589,7 @@ app.post('/api/refresh', async (req, res) => {
     
     // Start refresh async
     autoRefreshM3u8s(true).catch(err => {
-        log.error(`Manual refresh error (POST): ${err.message}`);
+        log.error(`Manual refresh error: ${err.message}`);
     });
 });
 
@@ -659,21 +607,51 @@ const server = app.listen(PORT, () => {
     log.info(`Port: ${PORT}`);
     log.info(`Refresh Interval: ${REFRESH_INTERVAL}h`);
     log.info(`Uptime: ${process.uptime()}s`);
-    
-    // Set next refresh time on startup
-    nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL * 60 * 60 * 1000);
-    log.info(`Next refresh scheduled: ${nextRefreshTime.toLocaleString('en-US', { 
-        weekday: 'short', 
-        month: 'short', 
-        day: 'numeric', 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-    })}`);
-    log.info(`⏰ Waiting ${REFRESH_INTERVAL} hour(s) before first refresh...`);
     log.info(`═══════════════════════════════════════`);
     
-    // ONLY scheduled refresh - NO initial refresh
+    // Check if we recently refreshed (within 30 minutes)
+    let shouldSkipInitial = false;
+    try {
+        if (fs.existsSync(REFRESH_MARKER_FILE)) {
+            const lastRefreshTimestamp = parseInt(fs.readFileSync(REFRESH_MARKER_FILE, 'utf8'));
+            const minutesSinceRefresh = (Date.now() - lastRefreshTimestamp) / (1000 * 60);
+            
+            if (minutesSinceRefresh < 30) {
+                shouldSkipInitial = true;
+                lastRefreshTime = new Date(lastRefreshTimestamp);
+                nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL * 60 * 60 * 1000);
+                
+                log.info(`🔄 Post-restart detected (last refresh: ${Math.floor(minutesSinceRefresh)} min ago)`);
+                log.info(`⏰ Next refresh scheduled: ${nextRefreshTime.toLocaleString('en-US', { 
+                    weekday: 'short', 
+                    month: 'short', 
+                    day: 'numeric', 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    hour12: true 
+                })}`);
+                log.info(`⏸️  Skipping initial refresh - waiting ${REFRESH_INTERVAL} hour(s)...`);
+            }
+        }
+    } catch (err) {
+        log.debug(`Marker file check: ${err.message}`);
+    }
+    
+    // Run initial refresh only if NOT a recent restart
+    if (!shouldSkipInitial) {
+        log.info('🚀 First deploy or stale data - starting initial refresh in 5 seconds...');
+        setTimeout(() => {
+            log.info('▶️  Starting initial refresh...');
+            autoRefreshM3u8s(false).catch(err => {
+                log.error(`Initial refresh error: ${err.message}`);
+                setTimeout(() => process.exit(1), 2000);
+            });
+        }, 5000);
+    }
+    
+    log.info(`═══════════════════════════════════════`);
+    
+    // Scheduled refresh every X hours
     setInterval(() => {
         if (!isRefreshing) {
             log.info('⏰ Starting scheduled refresh...');
