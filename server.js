@@ -28,7 +28,40 @@ const TELEGRAM_CHAT_ID = '8254382347';
 
 // Series configuration
 const seriesConfig = {
-    302658: {
+    274556: {
+        name: 'Uzak Sehir',
+        title: 'Far Away',
+        urlPattern: 'https://hds.turkish123.com/uzak-sehir-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 28 },
+            2: { startEpisode: 29, count: 9 }
+        }
+    },
+    74823: {
+        name: 'Cukur',
+        title: 'The Pit',
+        urlPattern: 'https://hds.turkish123.com/cukur-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 33 },
+            2: { startEpisode: 34, count: 34 },
+            3: { startEpisode: 68, count: 25 },
+            4: { startEpisode: 93, count: 39 }
+        }
+    },
+    283123: {
+        name: 'Esref Ruya',
+        title: 'Esref Ruya',
+        urlPattern: 'https://hds.turkish123.com/esref-ruya-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 13 },
+            2: { startEpisode: 14, count: 8 }
+        }
+    },
+    
+   302658: {
         name: 'Kurlus Orhan',
         title: 'Founder Orhan',
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
@@ -36,8 +69,50 @@ const seriesConfig = {
         seasons: {
             1: { startEpisode: 1, count: 3 }
         }
+    },
+   301693: {
+        name: 'sahtekarlar',
+        title: 'Lovers & Liars',
+        urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 5 }
+            
+        }
+    },
+    300388: {
+        name: 'guller-ve-gunahlar',
+        title: 'Sins and Roses',
+        urlPattern: 'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 6 }
+        }
+    },
+    246621: {
+        name: 'Mehmed: Sultan of Conquests',
+        title: 'Mehmed: Sultan of Conquests',
+        urlPattern: 'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 15 },
+            2: { startEpisode: 16, count: 34 },
+            3: { startEpisode: 50, count: 9 }
+          }
+    },
+     302063: {
+        name: 'tasacak-bu-denizr',
+        title: 'Deep in Love',
+        urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 6 }
+          
+        }
     }
+
 };
+
 
 // ============================================
 // LOGGING
@@ -411,7 +486,7 @@ async function autoRefreshM3u8s(isManual = false) {
         }
         
         const telegramMessage = `
-<b>✅ M3U8 Refresh Completed</b>
+<b>✅ M3U8 Refresh Completed By Railway </b>
 
 Type: ${isManual ? '🔧 Manual' : '⏰ Scheduled'}
 ✅ Success: ${stats.success}
