@@ -21,11 +21,10 @@ const FIRESTORE_WEBHOOK = 'https://flixstream.ca/api/webhook/stream-links';
 const REFRESH_INTERVAL = 1; // hours
 const PORT = process.env.PORT || 3000;
 const ENV = 'production';
-// Retrieve Chromium path from environment variable (critical for Railway/Docker)
 
-// Telegram Configuration (Using placeholder IDs)
-const TELEGRAM_BOT_TOKEN = '8368699861:AAFVzZdPT_1_TGA7VWL7VQQAdyQH-vQm8'; 
-const TELEGRAM_CHAT_ID = '8254382347'; 
+// Telegram Configuration
+const TELEGRAM_BOT_TOKEN = '8368699861:AAFVzZdPT_1_TGA7VWL7VQQAdyOyQH-vQm8';
+const TELEGRAM_CHAT_ID = '8254382347';
 
 // Series configuration
 const seriesConfig = {
@@ -36,6 +35,44 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 3 }
+        }
+    },
+    301693: {
+        name: 'sahtekarlar',
+        title: 'Lovers & Liars',
+        urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 6 }
+        }
+    },
+    300388: {
+        name: 'guller-ve-gunahlar',
+        title: 'Sins and Roses',
+        urlPattern: 'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 6 }
+        }
+    },
+    246621: {
+        name: 'Mehmed: Sultan of Conquests',
+        title: 'Mehmed: Sultan of Conquests',
+        urlPattern: 'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 15 },
+            2: { startEpisode: 16, count: 34 },
+            3: { startEpisode: 50, count: 8 }
+        }
+    },
+    302063: {
+        name: 'tasacak-bu-denizr',
+        title: 'Deep in Love',
+        urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
+        mediaType: 'tv',
+        seasons: {
+            1: { startEpisode: 1, count: 6 }
         }
     }
 };
@@ -115,7 +152,6 @@ async function forceCleanupBrowsers() {
         
         // Kill any lingering Chrome/Chromium processes
         await new Promise((resolve) => {
-            // Updated command to cover common container names (chrome or chromium)
             exec('pkill -9 chrome || pkill -9 chromium || true', (error) => {
                 if (error) {
                     log.debug(`Process kill attempt: ${error.message}`);
@@ -164,10 +200,7 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
         const result = await Promise.race([
             (async () => {
                 browser = await puppeteer.launch({
-                    // Use 'new' for modern headless mode
-                    headless: 'new', 
-                    // Pass executable path if defined via ENV
-                    executablePath: CHROMIUM_PATH,
+                    headless: 'new',
                     args: [
                         '--no-sandbox',
                         '--disable-setuid-sandbox',
@@ -202,13 +235,11 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
                     const url = request.url();
                     const type = request.resourceType();
                     
-                    // Abort unnecessary requests to save bandwidth/memory
                     if (['image', 'stylesheet', 'font', 'media', 'websocket', 'manifest'].includes(type)) {
                         request.abort().catch(() => {});
                         return;
                     }
                     
-                    // Capture m3u8 link on XHR
                     if (type === 'xhr' && url.includes('.m3u8')) {
                         videoUrls.push(url);
                         linkFound = true;
@@ -229,7 +260,7 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
                 }
                 
                 let waitCount = 0;
-                while (!linkFound && waitCount < 20) { // Wait up to 1 second (20 * 50ms)
+                while (!linkFound && waitCount < 20) {
                     await new Promise(resolve => setTimeout(resolve, 50));
                     waitCount++;
                 }
@@ -256,7 +287,6 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
         ]);
         
         return result;
-        
     } catch (error) {
         log.error(`Error fetching m3u8: ${error.message}`);
         if (retries > 0) {
@@ -276,8 +306,7 @@ async function fetchM3u8(movieId, season, episode, retries = 2) {
             // Wait for browser to fully close
             await new Promise(resolve => setTimeout(resolve, 500));
         }
-        // Aggressive garbage collection after each fetch
-        if (global.gc) global.gc(); 
+        if (global.gc) global.gc();
     }
 }
 
@@ -379,7 +408,6 @@ async function autoRefreshM3u8s(isManual = false) {
                             stats.failed++;
                         }
                         
-                        // Small delay to prevent hammering or resource exhaustion
                         await new Promise(resolve => setTimeout(resolve, 200));
                     } catch (error) {
                         stats.failed++;
@@ -575,24 +603,28 @@ app.post('/api/fetch-all/:movieId/:season', async (req, res) => {
     }
 });
 
-// 1. ADDED: GET handler to allow manual trigger/testing without 'CANNOT GET' error
-app.get('/api/refresh', (req, res) => {
-    // Respond immediately, letting the POST handler do the work
-    res.status(202).json({
-        success: true,
-        message: 'Refresh request accepted (via GET for convenience). Check logs for status or use POST for definitive triggering.'
-    });
-    // Fall-through to the POST handler is not automatic, so we call the function manually
-    if (!isRefreshing) {
-        autoRefreshM3u8s(true).catch(err => {
-            log.error(`Manual refresh error (from GET): ${err.message}`);
+// New GET route for /api/refresh to handle direct browser access
+app.get('/api/refresh', async (req, res) => {
+    if (isRefreshing) {
+        return res.status(429).json({ 
+            success: false, 
+            error: 'Refresh already in progress. Please wait.' 
         });
-    } else {
-        log.warn('Skipping GET-triggered refresh - already in progress.');
     }
+    
+    // Respond immediately so client doesn't wait for restart
+    res.json({ 
+        success: true, 
+        message: 'Manual refresh started via GET. Server will restart after completion for fresh environment.' 
+    });
+    
+    // Start refresh async
+    autoRefreshM3u8s(true).catch(err => {
+        log.error(`Manual refresh error (GET): ${err.message}`);
+    });
 });
 
-// 2. EXISTING: POST handler remains the canonical trigger
+
 app.post('/api/refresh', async (req, res) => {
     if (isRefreshing) {
         return res.status(429).json({ 
@@ -609,7 +641,7 @@ app.post('/api/refresh', async (req, res) => {
     
     // Start refresh async
     autoRefreshM3u8s(true).catch(err => {
-        log.error(`Manual refresh error (from POST): ${err.message}`);
+        log.error(`Manual refresh error (POST): ${err.message}`);
     });
 });
 
@@ -627,13 +659,6 @@ const server = app.listen(PORT, () => {
     log.info(`Port: ${PORT}`);
     log.info(`Refresh Interval: ${REFRESH_INTERVAL}h`);
     log.info(`Uptime: ${process.uptime()}s`);
-    
-    // Check if Chromium path is set
-    if (CHROMIUM_PATH) {
-        log.info(`⚙️  Chromium Path: ${CHROMIUM_PATH}`);
-    } else {
-        log.warn(`⚠️  Chromium Path NOT set. Relying on default puppeteer detection.`);
-    }
     
     // Set next refresh time on startup
     nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL * 60 * 60 * 1000);
