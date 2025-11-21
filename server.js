@@ -35,7 +35,7 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 28 },
-            2: { startEpisode: 29, count: 9 }
+            2: { startEpisode: 29, count: 10 }
         }
     },
     74823: {
@@ -57,7 +57,7 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 13 },
-            2: { startEpisode: 14, count: 8 }
+            2: { startEpisode: 14, count: 9 }
         }
     },
     
@@ -67,7 +67,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 3 }
+            1: { startEpisode: 1, count: 4 }
         }
     },
    301693: {
@@ -97,7 +97,7 @@ const seriesConfig = {
         seasons: {
             1: { startEpisode: 1, count: 15 },
             2: { startEpisode: 16, count: 34 },
-            3: { startEpisode: 50, count: 9 }
+            3: { startEpisode: 50, count: 11 }
           }
     },
      302063: {
@@ -106,7 +106,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 6 }
+            1: { startEpisode: 1, count: 7 }
           
         }
     }
