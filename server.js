@@ -57,7 +57,7 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 13 },
-            2: { startEpisode: 14, count: 9 }
+            2: { startEpisode: 14, count: 10 }
         }
     },
     
@@ -67,7 +67,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 4 }
+            1: { startEpisode: 1, count: 5 }
         }
     },
    301693: {
