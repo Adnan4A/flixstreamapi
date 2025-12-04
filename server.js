@@ -35,7 +35,7 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 28 },
-            2: { startEpisode: 29, count: 11 }
+            2: { startEpisode: 29, count: 12 }
         }
     },
     74823: {
@@ -57,7 +57,7 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 13 },
-            2: { startEpisode: 14, count: 10 }
+            2: { startEpisode: 14, count: 11 }
         }
     },
     
@@ -67,7 +67,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 5 }
+            1: { startEpisode: 1, count: 6 }
         }
     },
    301693: {
@@ -76,7 +76,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 7 }
+            1: { startEpisode: 1, count: 8 }
             
         }
     },
@@ -86,7 +86,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 7 }
+            1: { startEpisode: 1, count: 8 }
         }
     },
     246621: {
@@ -106,7 +106,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 7 }
+            1: { startEpisode: 1, count: 8 }
           
         }
     }
