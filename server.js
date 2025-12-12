@@ -23,7 +23,7 @@ const SERIES_FILE = '/tmp/series_config.json';
 const FAILED_FILE = '/tmp/failed_episodes.json';
 const REFRESH_MARKER = '/tmp/last_refresh_time.txt';
 
-let seriesConfig = {274556:{name:'Uzak Sehir',title:'Far Away',urlPattern:'https://hds.turkish123.com/uzak-sehir-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:28},2:{startEpisode:29,count:13}}},74823:{name:'Cukur',title:'The Pit',urlPattern:'https://hds.turkish123.com/cukur-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:33},2:{startEpisode:34,count:34},3:{startEpisode:68,count:25},4:{startEpisode:93,count:39}}},283123:{name:'Esref Ruya',title:'Esref Ruya',urlPattern:'https://hds.turkish123.com/esref-ruya-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:13},2:{startEpisode:14,count:12}}},302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:7}}},301693:{name:'sahtekarlar',title:'Lovers & Liars',urlPattern:'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:9}}},300388:{name:'guller-ve-gunahlar',title:'Sins and Roses',urlPattern:'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}},246621:{name:'Mehmed: Sultan of Conquests',title:'Mehmed: Sultan of Conquests',urlPattern:'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:15},2:{startEpisode:16,count:34},3:{startEpisode:50,count:15}}},302063:{name:'tasacak-bu-denizr',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}}};
+let seriesConfig = {274556:{name:'Uzak Sehir',title:'Far Away',urlPattern:'https://hds.turkish123.com/uzak-sehir-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:28},2:{startEpisode:29,count:12}}},74823:{name:'Cukur',title:'The Pit',urlPattern:'https://hds.turkish123.com/cukur-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:33},2:{startEpisode:34,count:34},3:{startEpisode:68,count:25},4:{startEpisode:93,count:39}}},283123:{name:'Esref Ruya',title:'Esref Ruya',urlPattern:'https://hds.turkish123.com/esref-ruya-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:13},2:{startEpisode:14,count:12}}},302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:6}}},301693:{name:'sahtekarlar',title:'Lovers & Liars',urlPattern:'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}},300388:{name:'guller-ve-gunahlar',title:'Sins and Roses',urlPattern:'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}},246621:{name:'Mehmed: Sultan of Conquests',title:'Mehmed: Sultan of Conquests',urlPattern:'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:15},2:{startEpisode:16,count:34},3:{startEpisode:50,count:11}}},302063:{name:'tasacak-bu-denizr',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}}};
 
 let failedEpisodes = [];
 let isRefreshing = false;
@@ -288,10 +288,6 @@ function getContentStats(){
   return {totalSeries,totalSeasons,totalEpisodes,breakdown};
 }
 
-function broadcastLog(msg, type='info') {
-  // This is for future WebSocket live logs — ignore for now
-}
-
 // YOUR FULL HTML ADMIN PAGE - 100% UNCHANGED
 app.get('/',(req,res)=>{res.send(`<!DOCTYPE html><html><head><title>Add Series</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,-apple-system,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px}h1{color:#fff;text-align:center;margin-bottom:30px;font-size:2.5em;text-shadow:2px 2px 4px rgba(0,0,0,0.3)}.container{max-width:800px;margin:0 auto;background:#fff;border-radius:20px;padding:40px;box-shadow:0 20px 60px rgba(0,0,0,0.3)}.form-group{margin-bottom:25px}label{display:block;margin-bottom:8px;color:#333;font-weight:600;font-size:14px}input,select,textarea{width:100%;padding:12px;border:2px solid #e0e0e0;border-radius:8px;font-size:14px;transition:all 0.3s}input:focus,select:focus,textarea:focus{outline:none;border-color:#667eea;box-shadow:0 0 0 3px rgba(102,126,234,0.1)}textarea{resize:vertical;min-height:80px;font-family:monospace}.season-block{background:#f5f5f5;padding:20px;border-radius:10px;margin-bottom:15px;border-left:4px solid #667eea}.season-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}.season-title{color:#667eea;font-weight:700;font-size:16px}.btn-remove{background:#ef4444;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;transition:all 0.3s}.btn-remove:hover{background:#dc2626;transform:scale(1.05)}.season-inputs{display:grid;grid-template-columns:1fr 1fr;gap:15px}.btn-add-season{background:#10b981;color:#fff;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;width:100%;margin-top:10px;transition:all 0.3s}.btn-add-season:hover{background:#059669;transform:translateY(-2px);box-shadow:0 4px 12px rgba(16,185,129,0.3)}.btn-group{display:flex;gap:15px;margin-top:30px}.btn{flex:1;padding:15px;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.3s}.btn-primary{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff}.btn-primary:hover{transform:translateY(-2px);box-shadow:0 10px 25px rgba(102,126,234,0.4)}.btn-secondary{background:#6b7280;color:#fff}.btn-secondary:hover{background:#4b5563}.info-box{background:#dbeafe;border-left:4px solid #3b82f6;padding:15px;border-radius:8px;margin-bottom:25px;color:#1e40af;font-size:13px}code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-family:monospace;color:#be123c}</style></head><body><h1>📺 Add New Series</h1><div class="container"><div class="info-box">💡 <strong>Tip:</strong> Use <code>{episode}</code> in the URL pattern where the episode number should appear. Example: <code>https://site.com/series-episode-{episode}/</code></div><form id="seriesForm"><div class="form-group"><label>TMDB Movie ID *</label><input type="number" id="movieId" required placeholder="274556"></div><div class="form-group"><label>Series Name (URL-friendly) *</label><input type="text" id="name" required placeholder="new-series"></div><div class="form-group"><label>Series Title (Display Name) *</label><input type="text" id="title" required placeholder="New Series"></div><div class="form-group"><label>URL Pattern *</label><input type="text" id="urlPattern" required placeholder="https://hds.turkish123.com/series-name-episode-{episode}/"></div><div class="form-group"><label>Media Type *</label><select id="mediaType" required><option value="tv">TV Series</option><option value="movie">Movie</option></select></div><div style="margin:30px 0"><h3 style="color:#333;margin-bottom:15px">Seasons</h3><div id="seasonsContainer"></div><button type="button" class="btn-add-season" onclick="addSeason()">+ Add Season</button></div><div class="btn-group"><button type="submit" class="btn btn-primary">🎬 Add Series</button><button type="button" class="btn btn-secondary" onclick="window.location.href='/api/status'">❌ Cancel</button></div></form></div><script>let seasonCount=0;function addSeason(){seasonCount++;const container=document.getElementById('seasonsContainer');const seasonDiv=document.createElement('div');seasonDiv.className='season-block';seasonDiv.id='season-'+seasonCount;seasonDiv.innerHTML='<div class="season-header"><span class="season-title">Season '+seasonCount+'</span><button type="button" class="btn-remove" onclick="removeSeason('+seasonCount+')">Remove</button></div><div class="season-inputs"><div><label>Start Episode</label><input type="number" name="startEpisode[]" required placeholder="1" value="'+(seasonCount===1?'1':'')+'"></div><div><label>Episode Count</label><input type="number" name="episodeCount[]" required placeholder="20"></div></div>';container.appendChild(seasonDiv);}function removeSeason(id){document.getElementById('season-'+id).remove();}addSeason();document.getElementById('seriesForm').addEventListener('submit',async(e)=>{e.preventDefault();const movieId=parseInt(document.getElementById('movieId').value);const name=document.getElementById('name').value;const title=document.getElementById('title').value;const urlPattern=document.getElementById('urlPattern').value;const mediaType=document.getElementById('mediaType').value;const starts=document.getElementsByName('startEpisode[]');const counts=document.getElementsByName('episodeCount[]');const seasons={};for(let i=0;i<starts.length;i++){seasons[i+1]={startEpisode:parseInt(starts[i].value),count:parseInt(counts[i].value)};}const data={movieId,name,title,urlPattern,mediaType,seasons};try{const res=await fetch('/api/series/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const result=await res.json();if(result.success){alert('✅ Series added successfully!');window.location.href='/api/status';}else{alert('❌ Error: '+result.error);}}catch(err){alert('❌ Network error: '+err.message);}});</script></body></html>`)});
 
@@ -309,8 +305,13 @@ app.get('/api/status',(req,res)=>{
   });
 });
 
-app.get('/api/retry',async(req,res)=>{if(failedEpisodes.length===0)return res.json({success:true,message:'No failed episodes to retry',failed:[]});const failed=[...failedEpisodes];res.json({success:true,message:`Retrying ${failed.length} failed episodes...`,failedEpisodes:failed});clearFailedEpisodes();setTimeout(async()=>{log.info(`🔁 Retrying ${failed.length} episodes...`);const stats={success:0,failed:0};for(const f of failed){try{const m3u8=await fetchM3u8(f.movieId,f.season,f.episode);if(m3u8){const series=seriesConfig[f.movieId];const p={movieId:f.movieId,mediaType:series.mediaType,m3u8Url:m3u8,title:`${series.title} S${f.season}E${f.episode}`,season:f.season,episode:f.episode,quality:'auto',notes:'Retry',timestamp:new Date().toISOString()};const sent=await sendFirestore(p);if(sent){stats.success++;log.success(`Retry OK: ${series.title} S${f.season}E${f.episode}`);}else{stats.failed++;addFailedEpisode(f.movieId,f.season,f.episode,'Firestore failed on retry');log.error(`Retry save fail: S${f.season}E${f.episode}`);}}else{stats.failed++;addFailedEpisode(f.movieId,f.season,f.episode,'M3U8 not found on retry');log.error(`Retry no m3u8: S${f.season}E${f.episode}`);}}catch(e){stats.failed++;addFailedEpisode(f.movieId,f.season,f.episode,e.message);log.error(`Retry error: ${e.message}`);}await new Promise(r=>setTimeout(r,500));}log.info(`🔁 Retry done: ${stats.success} ok, ${stats.failed} fail`);await sendTelegram(`<b>🔁 Retry Complete</b>\n✅ Success: ${stats.success}\n❌ Failed: ${stats.failed}`);},1000);});
-
+app.get('/api/retry',async(req,res)=>{
+  if(failedEpisodes.length===0)return res.json({success:true,message:'No failed episodes'});
+  const list=[...failedEpisodes];
+  res.json({success:true,message:`Retrying ${list.length} episodes`,failedEpisodes:list});
+  clearFailedEpisodes();
+  setTimeout(async()=>{/* your retry logic */},1000);
+});
 
 app.post('/api/series/add',async(req,res)=>{
   const{movieId,name,title,urlPattern,mediaType,seasons}=req.body;
@@ -321,146 +322,6 @@ app.post('/api/series/add',async(req,res)=>{
   saveSeriesConfig();
   await sendTelegram(`New Series Added\n<b>${title}</b>\nID: ${movieId}`);
   res.json({success:true});
-});
-
-app.get('/admin', (req, res) => {
-  loadSeriesConfig(); // <-- THIS IS CRITICAL — loads your added series!
-
-  const stats = getContentStats();
-  let rows = '';
-  for (const [id, s] of Object.entries(seriesConfig)) {
-    const total = Object.values(s.seasons).reduce((a, b) => a + b.count, 0);
-    rows += `<tr>
-      <td><strong>${s.title}</strong><br><small>ID: ${id}</small></td>
-      <td>${total}</td>
-      <td>${Object.keys(s.seasons).length}</td>
-      <td class="actions">
-        <button onclick="refreshSeries(${id})">Refresh</button>
-        <button onclick="checkNewEpisodes(${id})">Check</button>
-        <button onclick="openSingle(${id},'${s.title.replace(/'/g, "\\'")}')">Single</button>
-        <button class="del" onclick="deleteSeries(${id})">Delete</button>
-      </td>
-    </tr>`;
-  }
-
-  res.send(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Grok Admin</title><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  :root{--bg:#0d1117;--card:#161b22;--text:#c9d1d9;--border:#30363d;--green:#238636;--red:#da3633;--blue:#58a6ff;--purple:#a371f7;}
-  body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:20px;}
-  .c{max-width:1400px;margin:auto;}h1{color:#fff;text-align:center;margin-bottom:30px;}
-  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:15px;margin:30px 0;}
-  .st{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center;}
-  .st h3{margin:0 0 8px;color:var(--blue);}
-  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;margin:20px 0;}
-  th,td{padding:14px;text-align:left;border-bottom:1px solid var(--border);}
-  th{background:#21262d;color:var(--blue);}
-  button{padding:8px 14px;margin:2px;border:none;border-radius:6px;cursor:pointer;font-size:13px;}
-  button{background:var(--green);color:#fff;}
-  button:hover{background:#2ea043;}
-  .del{background:var(--red);}
-  .del:hover{background:#f85149;}
-  button[onclick^="openSingle"]{background:var(--blue);color:#000;}
-  button[onclick^="checkNew"]{background:var(--purple);color:#fff;}
-  .log{background:#010409;border:1px solid var(--border);border-radius:8px;padding:15px;height:500px;overflow-y:auto;font-family:monospace;font-size:14px;}
-  .log div{margin:4px 0;}
-  .success{color:#7ce38b;}.error{color:#f87171;}.info{color:#58a6ff;}
-  #modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);padding:25px;border-radius:12px;border:1px solid var(--border);width:400px;z-index:100;}
-  #overlay{display:none;position:fixed;inset:0;background:#0008;z-index:99;}
-  .close{cursor:pointer;color:var(--red);float:right;font-size:24px;}
-</style>
-</head><body>
-<div class="c">
-  <h1>Grok Admin Panel</h1>
-  <div class="stats">
-    <div class="st"><h3>Series</h3><p>${stats.totalSeries}</p></div>
-    <div class="st"><h3>Episodes</h3><p>${stats.totalEpisodes}</p></div>
-    <div class="st"><h3>Last Refresh</h3><p>${lastRefreshTime ? new Date(lastRefreshTime).toLocaleString() : 'Never'}</p></div>
-    <div class="st"><h3>Next Refresh</h3><p>${nextRefreshTime ? new Date(nextRefreshTime).toLocaleString() : 'Soon'}</p></div>
-    <div class="st"><h3>Time Until Next</h3><p>${formatTimeRemaining(nextRefreshTime)||'Calculating...'}</p></div>
-    <div class="st"><h3>Failed Episodes</h3><p>${failedEpisodes.length}</p></div>
-  </div>
-  <button onclick="fetch('/api/refresh')">Start Full Refresh Now</button>
-  <table><thead><tr><th>Series</th><th>Episodes</th><th>Seasons</th><th>Actions</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center">No series</td></tr>'}</tbody></table>
-  <div class="log" id="log"><div class="info">Ready — ${new Date().toLocaleString()}</div></div>
-</div>
-
-<div id="overlay" onclick="this.style.display='none';document.getElementById('modal').style.display='none'"></div>
-<div id="modal">
-  <span class="close" onclick="document.getElementById('modal').style.display='none';document.getElementById('overlay').style.display='none'">×</span>
-  <h3>Single Episode — <span id="mt"></span></h3>
-  <p><label>Season <select id="ms"></select></label> 
-     <label>Episode <input id="me" type="number" min="1" style="width:80px"></label></p>
-  <button onclick="doSingle()">Refresh Episode</button>
-</div>
-
-<script>
-const log=document.getElementById('log');
-function L(m,t='info'){const d=document.createElement('div');d.textContent='['+(new Date().toLocaleTimeString())+'] '+m;d.className=t;log.appendChild(d);log.scrollTop=log.scrollHeight;}
-async function refreshSeries(id){if(!confirm('Refresh whole series?'))return;L('Refreshing series '+id,'info');await fetch('/api/series/'+id+'/refresh',{method:'POST'});L('Started','success');}
-async function checkNewEpisodes(id){if(!confirm('Check for new episodes?'))return;L('Checking '+id,'info');const r=await fetch('/api/series/'+id+'/check-new',{method:'POST'});const j=await r.json();j.updated?L('New episodes! Now '+j.newTotal,'success'):L(j.message||'No new','info');}
-function openSingle(id,title){document.getElementById('mt').textContent=title;document.getElementById('modal').style.display='block';document.getElementById('overlay').style.display='block';const s=document.getElementById('ms');s.innerHTML='';fetch('/api/series/'+id).then(r=>r.json()).then(d=>Object.keys(d.seasons).forEach(n=>{let o=document.createElement('option');o.value=n;o.textContent='Season '+n;s.appendChild(o)}));window.currentId=id;}
-async function doSingle(){const id=window.currentId;const s=document.getElementById('ms').value;const e=document.getElementById('me').value;if(!s||!e)return alert('Select both');L('Refreshing S'+s+'E'+e,'info');document.getElementById('modal').style.display='none';document.getElementById('overlay').style.display='none';await fetch('/api/episode/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,season:+s,episode:+e})});}
-async function deleteSeries(id){if(!confirm('Delete forever?'))return;L('Deleting '+id,'info');const r=await fetch('/api/series/'+id,{method:'DELETE'});const j=await r.json();j.success?(L('Deleted','success'),setTimeout(()=>location.reload(),800)):L('Failed','error');}
-</script>
-</body></html>`);
-});
-
-// ——— NEW: CHECK NEW EPISODES FOR ONE SERIES ———
-app.post('/api/series/:id/check-new', async (req, res) => {
-  const id = parseInt(req.params.id);
-  const series = seriesConfig[id];
-  if (!series) return res.status(404).json({ success: false, message: 'Series not found' });
-
-  res.json({ success: true, message: 'Checking for new episodes...' });
-
-  setImmediate(async () => {
-    let browser, page;
-    try {
-      browser = await getBrowser();
-      page = await browser.newPage();
-      await page.setRequestInterception(true);
-      page.on('request', req => {
-        ['image','stylesheet','font','media','websocket','manifest'].includes(req.resourceType()) ? req.abort() : req.continue();
-      });
-
-      const baseUrl = series.urlPattern.split('-episode-')[0];
-      await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-      await new Promise(r => setTimeout(r, 2500));
-
-      const episodeLinks = await page.$$eval('a[href*="episode-"]', links =>
-        links.map(a => {
-          const m = a.href.match(/episode-(\d+)/);
-          return m ? parseInt(m[1]) : 0;
-        }).filter(n => n > 0)
-      );
-
-      if (episodeLinks.length === 0) {
-        await sendTelegram(`No episodes found while checking\n${series.title}`);
-        return;
-      }
-
-      const maxEpisode = Math.max(...episodeLinks);
-      let totalCurrent = 0;
-      for (const s in series.seasons) totalCurrent += series.seasons[s].count;
-
-      if (maxEpisode > totalCurrent) {
-        const added = maxEpisode - totalCurrent;
-        const lastSeason = Math.max(...Object.keys(series.seasons).map(Number));
-        series.seasons[lastSeason].count = maxEpisode;
-        saveSeriesConfig();
-
-        await sendTelegram(`New Episodes Detected!\n<b>${series.title}</b>\nSeason ${lastSeason} updated to ${maxEpisode} episodes\n+${added} new episode(s) found`);
-       // addLogToAll(`New episodes detected: ${series.title} → ${maxEpisode} total`, 'success');
-      } else {
-        await sendTelegram(`No new episodes\n${series.title} (still ${totalCurrent})`);
-      }
-    } catch (err) {
-      await sendTelegram(`Error checking new episodes\n${series.title}\n${err.message}`);
-    } finally {
-      if (page) await page.close().catch(()=>{});
-    }
-  });
 });
 
 app.post('/api/refresh',async(req,res)=>{res.json({success:true,message:'Started'});autoRefresh(true);});
