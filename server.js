@@ -319,14 +319,87 @@ app.post('/api/series/add',async(req,res)=>{
   res.json({success:true});
 });
 
-app.get('/admin',(req,res)=>{
-  const stats=getContentStats();
-  let tableRows='';
-  for(const[id,series]of Object.entries(seriesConfig)){
-    const totalEps=Object.values(series.seasons).reduce((a,b)=>a+b.count,0);
-    tableRows+=`<tr><td><strong>${series.title}</strong><br><small>ID: ${id}</small></td><td>${totalEps}</td><td>${Object.keys(series.seasons).length}</td><td><button class="btn small green" onclick="refreshSeries(${id})">Refresh</button><button class="btn small blue" onclick="showEpisodePicker(${id},'${series.title.replace(/'/g,"\\'")}')">Single</button><button class="btn small" style="background:#a371f7;color:white;" onclick="checkNewEpisodes(${id})">Check</button><button class="btn small red" onclick="deleteSeries(${id})">Delete</button></td></tr>`;
+app.get('/admin', (req, res) => {
+  loadSeriesConfig(); // <-- THIS IS CRITICAL — loads your added series!
+
+  const stats = getContentStats();
+  let rows = '';
+  for (const [id, s] of Object.entries(seriesConfig)) {
+    const total = Object.values(s.seasons).reduce((a, b) => a + b.count, 0);
+    rows += `<tr>
+      <td><strong>${s.title}</strong><br><small>ID: ${id}</small></td>
+      <td>${total}</td>
+      <td>${Object.keys(s.seasons).length}</td>
+      <td class="actions">
+        <button onclick="refreshSeries(${id})">Refresh</button>
+        <button onclick="checkNewEpisodes(${id})">Check</button>
+        <button onclick="openSingle(${id},'${s.title.replace(/'/g, "\\'")}')">Single</button>
+        <button class="del" onclick="deleteSeries(${id})">Delete</button>
+      </td>
+    </tr>`;
   }
-  res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Grok Admin • M3U8 Server</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>:root{--bg:#0d1117;--card:#161b22;--text:#c9d1d9;--border:#30363d;--green:#238636;--red:#da3633;--blue:#58a6ff;--purple:#a371f7;}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:20px;}.container{max-width:1350px;margin:auto;}h1{color:#fff;text-align:center;margin:0 0 30px;font-size:2.2em;}.grid{display:grid;grid-template-columns:1fr 420px;gap:25px;}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px;margin-bottom:25px;}.stat{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center;}.stat h3{margin:0 0 8px;color:var(--blue);font-size:14px;}.stat p{margin:0;font-size:1.8em;font-weight:bold;}table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;}th,td{padding:14px;text-align:left;border-bottom:1px solid var(--border);}th{background:#21262d;color:var(--blue);}tr:hover{background:#1f6feb0a;}.btn{padding:8px 14px;margin:2px;border:none;border-radius:6px;cursor:pointer;font-size:13px;transition:0.2s;}.green{background:var(--green);color:white;}.green:hover{background:#2ea043;}.blue{background:var(--blue);color:black;}.blue:hover{background:#7bbaff;}.red{background:var(--red);color:white;}.red:hover{background:#f85149;}.small{font-size:12px;padding:6px 11px;}.log-panel{background:#010409;border:1px solid var(--border);border-radius:8px;padding:15px;height:620px;overflow-y:auto;font-family:monospace;font-size:13px;line-height:1.5;}.log-entry{margin:4px 0;}.success{color:#7ce38b;}.error{color:#f87171;}.info{color:#58a6ff;}.warn{color:#f7b14a;}.footer{text-align:center;margin-top:40px;color:#8b949e;font-size:14px;}#episodePicker{display:none;background:var(--card);border:1px solid var(--border);padding:20px;border-radius:10px;margin-top:15px;}.close-btn{float:right;cursor:pointer;color:var(--red);font-weight:bold;font-size:20px;}</style></head><body><div class="container"><h1>Grok Admin Panel</h1><div class="stats"><div class="stat"><h3>Series</h3><p>${stats.totalSeries}</p></div><div class="stat"><h3>Episodes</h3><p>${stats.totalEpisodes}</p></div><div class="stat"><h3>Status</h3><p>${isRefreshing?'<span class="error">Busy</span>':'<span class="success">Ready</span>'}</p></div><div class="stat"><h3>Last Full</h3><p>${lastRefreshTime?new Date(lastRefreshTime).toLocaleString():'Never'}</p></div></div><button class="btn green" style="padding:12px 30px;font-size:16px;" onclick="fetch('/api/refresh')">Start Full Refresh Now</button><div class="grid"><div><table><thead><tr><th>Series</th><th>Episodes</th><th>Seasons</th><th>Actions</th></tr></thead><tbody>${tableRows||'<tr><td colspan="4" style="text-align:center">No series</td></tr>'}</tbody></table></div><div class="log-panel" id="log"><div class="info">Ready • ${new Date().toLocaleString()}</div></div></div><div id="episodePicker"><span class="close-btn" onclick="this.parentNode.style.display='none'">X</span><h3>Single Episode — <span id="pickerTitle"></span></h3><div style="margin:20px 0"><label>Season: <select id="seasonSelect"></select></label><label style="margin-left:15px">Episode: <input type="number" id="episodeInput" min="1" style="width:80px;padding:8px"></label><button class="btn green" onclick="refreshSingleEpisode()" style="margin-left:15px">Go</button></div></div><div class="footer">Turkish123 Scraper • ${new Date().getFullYear()}</div></div><script>const log=document.getElementById('log');function log.innerHTML='';function addLog(m,t='info'){const d=document.createElement('div');d.className='log-entry '+t;d.textContent='['+new Date().toLocaleTimeString()+'] '+m;log.appendChild(d);log.scrollTop=log.scrollHeight;}async function refreshSeries(i){if(!confirm('Refresh all episodes?'))return;addLog('Starting refresh '+i,'info');await fetch('/api/series/'+i+'/refresh',{method:'POST'});addLog('Started','success');}async function checkNewEpisodes(i){if(!confirm('Check for new episodes?'))return;addLog('Checking '+i,'info');const r=await fetch('/api/series/'+i+'/check-new',{method:'POST'});const j=await r.json();j.updated?addLog('New episodes! Now '+j.newTotal,'success'):addLog(j.message||'No new episodes','info');}function showEpisodePicker(i,t){document.getElementById('pickerTitle').textContent=t;document.getElementById('episodePicker').style.display='block';const s=document.getElementById('seasonSelect');s.innerHTML='';fetch('/api/series/'+i).then(r=>r.json()).then(d=>Object.keys(d.seasons).forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent='Season '+n;s.appendChild(o)}));}async function refreshSingleEpisode(){const t=document.getElementById('pickerTitle').textContent;const s=document.getElementById('seasonSelect').value;const e=document.getElementById('episodeInput').value;if(!s||!e)return alert('Select both');addLog('Refreshing '+t+' S'+s+'E'+e,'info');document.getElementById('episodePicker').style.display='none';await fetch('/api/episode/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:parseInt(t.match(/ID: (\\d+)/)?.[1]||i),season:parseInt(s),episode:parseInt(e)})});}async function deleteSeries(i){if(!confirm('Delete forever?'))return;const r=await fetch('/api/series/'+i,{method:'DELETE'});const j=await r.json();j.success&&setTimeout(()=>location.reload(),800);}</script></body></html>`);
+
+  res.send(`<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Grok Admin</title><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--text:#c9d1d9;--border:#30363d;--green:#238636;--red:#da3633;--blue:#58a6ff;--purple:#a371f7;}
+  body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:20px;}
+  .c{max-width:1400px;margin:auto;}h1{color:#fff;text-align:center;margin-bottom:30px;}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:15px;margin:30px 0;}
+  .st{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center;}
+  .st h3{margin:0 0 8px;color:var(--blue);}
+  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;margin:20px 0;}
+  th,td{padding:14px;text-align:left;border-bottom:1px solid var(--border);}
+  th{background:#21262d;color:var(--blue);}
+  button{padding:8px 14px;margin:2px;border:none;border-radius:6px;cursor:pointer;font-size:13px;}
+  button{background:var(--green);color:#fff;}
+  button:hover{background:#2ea043;}
+  .del{background:var(--red);}
+  .del:hover{background:#f85149;}
+  button[onclick^="openSingle"]{background:var(--blue);color:#000;}
+  button[onclick^="checkNew"]{background:var(--purple);color:#fff;}
+  .log{background:#010409;border:1px solid var(--border);border-radius:8px;padding:15px;height:500px;overflow-y:auto;font-family:monospace;font-size:14px;}
+  .log div{margin:4px 0;}
+  .success{color:#7ce38b;}.error{color:#f87171;}.info{color:#58a6ff;}
+  #modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);padding:25px;border-radius:12px;border:1px solid var(--border);width:400px;z-index:100;}
+  #overlay{display:none;position:fixed;inset:0;background:#0008;z-index:99;}
+  .close{cursor:pointer;color:var(--red);float:right;font-size:24px;}
+</style>
+</head><body>
+<div class="c">
+  <h1>Grok Admin Panel</h1>
+  <div class="stats">
+    <div class="st"><h3>Series</h3><p>${stats.totalSeries}</p></div>
+    <div class="st"><h3>Episodes</h3><p>${stats.totalEpisodes}</p></div>
+    <div class="st"><h3>Last Refresh</h3><p>${lastRefreshTime ? new Date(lastRefreshTime).toLocaleString() : 'Never'}</p></div>
+    <div class="st"><h3>Next Refresh</h3><p>${nextRefreshTime ? new Date(nextRefreshTime).toLocaleString() : 'Soon'}</p></div>
+    <div class="st"><h3>Time Until Next</h3><p>${formatTimeRemaining(nextRefreshTime)||'Calculating...'}</p></div>
+    <div class="st"><h3>Failed Episodes</h3><p>${failedEpisodes.length}</p></div>
+  </div>
+  <button onclick="fetch('/api/refresh')">Start Full Refresh Now</button>
+  <table><thead><tr><th>Series</th><th>Episodes</th><th>Seasons</th><th>Actions</th></tr></thead><tbody>${rows||'<tr><td colspan="4" style="text-align:center">No series</td></tr>'}</tbody></table>
+  <div class="log" id="log"><div class="info">Ready — ${new Date().toLocaleString()}</div></div>
+</div>
+
+<div id="overlay" onclick="this.style.display='none';document.getElementById('modal').style.display='none'"></div>
+<div id="modal">
+  <span class="close" onclick="document.getElementById('modal').style.display='none';document.getElementById('overlay').style.display='none'">×</span>
+  <h3>Single Episode — <span id="mt"></span></h3>
+  <p><label>Season <select id="ms"></select></label> 
+     <label>Episode <input id="me" type="number" min="1" style="width:80px"></label></p>
+  <button onclick="doSingle()">Refresh Episode</button>
+</div>
+
+<script>
+const log=document.getElementById('log');
+function L(m,t='info'){const d=document.createElement('div');d.textContent='['+(new Date().toLocaleTimeString())+'] '+m;d.className=t;log.appendChild(d);log.scrollTop=log.scrollHeight;}
+async function refreshSeries(id){if(!confirm('Refresh whole series?'))return;L('Refreshing series '+id,'info');await fetch('/api/series/'+id+'/refresh',{method:'POST'});L('Started','success');}
+async function checkNewEpisodes(id){if(!confirm('Check for new episodes?'))return;L('Checking '+id,'info');const r=await fetch('/api/series/'+id+'/check-new',{method:'POST'});const j=await r.json();j.updated?L('New episodes! Now '+j.newTotal,'success'):L(j.message||'No new','info');}
+function openSingle(id,title){document.getElementById('mt').textContent=title;document.getElementById('modal').style.display='block';document.getElementById('overlay').style.display='block';const s=document.getElementById('ms');s.innerHTML='';fetch('/api/series/'+id).then(r=>r.json()).then(d=>Object.keys(d.seasons).forEach(n=>{let o=document.createElement('option');o.value=n;o.textContent='Season '+n;s.appendChild(o)}));window.currentId=id;}
+async function doSingle(){const id=window.currentId;const s=document.getElementById('ms').value;const e=document.getElementById('me').value;if(!s||!e)return alert('Select both');L('Refreshing S'+s+'E'+e,'info');document.getElementById('modal').style.display='none';document.getElementById('overlay').style.display='none';await fetch('/api/episode/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,season:+s,episode:+e})});}
+async function deleteSeries(id){if(!confirm('Delete forever?'))return;L('Deleting '+id,'info');const r=await fetch('/api/series/'+id,{method:'DELETE'});const j=await r.json();j.success?(L('Deleted','success'),setTimeout(()=>location.reload(),800)):L('Failed','error');}
+</script>
+</body></html>`);
 });
 
 // ——— NEW: CHECK NEW EPISODES FOR ONE SERIES ———
@@ -374,7 +447,7 @@ app.post('/api/series/:id/check-new', async (req, res) => {
         saveSeriesConfig();
 
         await sendTelegram(`New Episodes Detected!\n<b>${series.title}</b>\nSeason ${lastSeason} updated to ${maxEpisode} episodes\n+${added} new episode(s) found`);
-        addLogToAll(`New episodes detected: ${series.title} → ${maxEpisode} total`, 'success');
+       // addLogToAll(`New episodes detected: ${series.title} → ${maxEpisode} total`, 'success');
       } else {
         await sendTelegram(`No new episodes\n${series.title} (still ${totalCurrent})`);
       }
