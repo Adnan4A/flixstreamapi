@@ -23,7 +23,7 @@ const SERIES_FILE = '/tmp/series_config.json';
 const FAILED_FILE = '/tmp/failed_episodes.json';
 const REFRESH_MARKER = '/tmp/last_refresh_time.txt';
 
-let seriesConfig = {274556:{name:'Uzak Sehir',title:'Far Away',urlPattern:'https://hds.turkish123.com/uzak-sehir-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:28},2:{startEpisode:29,count:12}}},74823:{name:'Cukur',title:'The Pit',urlPattern:'https://hds.turkish123.com/cukur-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:33},2:{startEpisode:34,count:34},3:{startEpisode:68,count:25},4:{startEpisode:93,count:39}}},283123:{name:'Esref Ruya',title:'Esref Ruya',urlPattern:'https://hds.turkish123.com/esref-ruya-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:13},2:{startEpisode:14,count:12}}},302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:6}}},301693:{name:'sahtekarlar',title:'Lovers & Liars',urlPattern:'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}},300388:{name:'guller-ve-gunahlar',title:'Sins and Roses',urlPattern:'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}},246621:{name:'Mehmed: Sultan of Conquests',title:'Mehmed: Sultan of Conquests',urlPattern:'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:15},2:{startEpisode:16,count:34},3:{startEpisode:50,count:11}}},302063:{name:'tasacak-bu-denizr',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}}};
+let seriesConfig = {274556:{name:'Uzak Sehir',title:'Far Away',urlPattern:'https://hds.turkish123.com/uzak-sehir-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:28},2:{startEpisode:29,count:13}}},74823:{name:'Cukur',title:'The Pit',urlPattern:'https://hds.turkish123.com/cukur-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:33},2:{startEpisode:34,count:34},3:{startEpisode:68,count:25},4:{startEpisode:93,count:39}}},283123:{name:'Esref Ruya',title:'Esref Ruya',urlPattern:'https://hds.turkish123.com/esref-ruya-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:13},2:{startEpisode:14,count:12}}},302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:7}}},301693:{name:'sahtekarlar',title:'Lovers & Liars',urlPattern:'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:9}}},300388:{name:'guller-ve-gunahlar',title:'Sins and Roses',urlPattern:'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}},246621:{name:'Mehmed: Sultan of Conquests',title:'Mehmed: Sultan of Conquests',urlPattern:'https://hds.turkish123.com/mehmed-fetihler-sultani-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:15},2:{startEpisode:16,count:34},3:{startEpisode:50,count:15}}},302063:{name:'tasacak-bu-denizr',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:9}}}};
 
 let failedEpisodes = [];
 let isRefreshing = false;
@@ -305,13 +305,8 @@ app.get('/api/status',(req,res)=>{
   });
 });
 
-app.get('/api/retry',async(req,res)=>{
-  if(failedEpisodes.length===0)return res.json({success:true,message:'No failed episodes'});
-  const list=[...failedEpisodes];
-  res.json({success:true,message:`Retrying ${list.length} episodes`,failedEpisodes:list});
-  clearFailedEpisodes();
-  setTimeout(async()=>{/* your retry logic */},1000);
-});
+app.get('/api/retry',async(req,res)=>{if(failedEpisodes.length===0)return res.json({success:true,message:'No failed episodes to retry',failed:[]});const failed=[...failedEpisodes];res.json({success:true,message:`Retrying ${failed.length} failed episodes...`,failedEpisodes:failed});clearFailedEpisodes();setTimeout(async()=>{log.info(`🔁 Retrying ${failed.length} episodes...`);const stats={success:0,failed:0};for(const f of failed){try{const m3u8=await fetchM3u8(f.movieId,f.season,f.episode);if(m3u8){const series=seriesConfig[f.movieId];const p={movieId:f.movieId,mediaType:series.mediaType,m3u8Url:m3u8,title:`${series.title} S${f.season}E${f.episode}`,season:f.season,episode:f.episode,quality:'auto',notes:'Retry',timestamp:new Date().toISOString()};const sent=await sendFirestore(p);if(sent){stats.success++;log.success(`Retry OK: ${series.title} S${f.season}E${f.episode}`);}else{stats.failed++;addFailedEpisode(f.movieId,f.season,f.episode,'Firestore failed on retry');log.error(`Retry save fail: S${f.season}E${f.episode}`);}}else{stats.failed++;addFailedEpisode(f.movieId,f.season,f.episode,'M3U8 not found on retry');log.error(`Retry no m3u8: S${f.season}E${f.episode}`);}}catch(e){stats.failed++;addFailedEpisode(f.movieId,f.season,f.episode,e.message);log.error(`Retry error: ${e.message}`);}await new Promise(r=>setTimeout(r,500));}log.info(`🔁 Retry done: ${stats.success} ok, ${stats.failed} fail`);await sendTelegram(`<b>🔁 Retry Complete</b>\n✅ Success: ${stats.success}\n❌ Failed: ${stats.failed}`);},1000);});
+
 
 app.post('/api/series/add',async(req,res)=>{
   const{movieId,name,title,urlPattern,mediaType,seasons}=req.body;
@@ -322,6 +317,236 @@ app.post('/api/series/add',async(req,res)=>{
   saveSeriesConfig();
   await sendTelegram(`New Series Added\n<b>${title}</b>\nID: ${movieId}`);
   res.json({success:true});
+});
+
+// ——— FINAL ADMIN PANEL WITH "RECHECK NEW EPISODES" BUTTON ———
+app.get('/admin', (req, res) => {
+  const stats = getContentStats();
+
+  let tableRows = '';
+  for (const [id, series] of Object.entries(seriesConfig)) {
+    const totalEps = Object.values(series.seasons).reduce((a, b) => a + b.count, 0);
+    tableRows += `
+      <tr>
+        <td><strong>${series.title}</strong><br><small>ID: ${id}</small></td>
+        <td>${totalEps}</td>
+        <td>${Object.keys(series.seasons).length}</td>
+        <td>
+          <button class="btn small green" onclick="refreshSeries(${id})" title="Refresh all episodes">Refresh</button>
+          <button class="btn small blue" onclick="showEpisodePicker(${id}, '${series.title.replace(/'/g, "\\'")}')" title="Refresh one episode">Single</button>
+          <button class="btn small" style="background:#a371f7;color:white;" onclick="checkNewEpisodes(${id})" title="Check for new episodes">Check</button>
+          <button class="btn small red" onclick="deleteSeries(${id})" title="Delete series">Delete</button>
+        </td>
+      </tr>`;
+  }
+
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Grok Admin • M3U8 Server</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0d1117;--card:#161b22;--text:#c9d1d9;--border:#30363d;--green:#238636;--red:#da3633;--blue:#58a6ff;--purple:#a371f7; }
+  body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:20px;}
+  .container{max-width:1350px;margin:auto;}
+  h1{color:#fff;text-align:center;margin:0 0 30px;font-size:2.2em;}
+  .grid{display:grid;grid-template-columns:1fr 420px;gap:25px;}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px;margin-bottom:25px;}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center;}
+  .stat h3{margin:0 0 8px;color:var(--blue);font-size:14px;}
+  .stat p{margin:0;font-size:1.8em;font-weight:bold;}
+  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;}
+  th,td{padding:14px;text-align:left;border-bottom:1px solid var(--border);}
+  th{background:#21262d;color:var(--blue);}
+  tr:hover{background:#1f6feb0a;}
+  .btn{padding:8px 14px;margin:2px;border:none;border-radius:6px;cursor:pointer;font-size:13px;transition:0.2s;}
+  .green{background:var(--green);color:white;}
+  .green:hover{background:#2ea043;}
+  .blue{background:var(--blue);color:black;}
+  .blue:hover{background:#7bbaff;}
+  .red{background:var(--red);color:white;}
+  .red:hover{background:#f85149;}
+  .small{font-size:12px;padding:6px 11px;}
+  .log-panel{background:#010409;border:1px solid var(--border);border-radius:8px;padding:15px;height:620px;overflow-y:auto;font-family:monospace;font-size:13px;line-height:1.5;}
+  .log-entry{margin:4px 0;}
+  .success{color:#7ce38b;}
+  .error{color:#f87171;}
+  .info{color:#58a6ff;}
+  .warn{color:#f7b14a;}
+  .footer{text-align:center;margin-top:40px;color:#8b949e;font-size:14px;}
+  #episodePicker{display:none;background:var(--card);border:1px solid var(--border);padding:20px;border-radius:10px;margin-top:15px;}
+  .close-btn{float:right;cursor:pointer;color:var(--red);font-weight:bold;font-size:20px;}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Grok Admin Panel</h1>
+
+  <div class="stats">
+    <div class="stat"><h3>Series</h3><p>${stats.totalSeries}</p></div>
+    <div class="stat"><h3>Episodes</h3><p>${stats.totalEpisodes}</p></div>
+    <div class="stat"><h3>Status</h3><p>${isRefreshing ? '<span class="error">Busy</span>' : '<span class="success">Ready</span>'}</p></div>
+    <div class="stat"><h3>Last Full</h3><p>${lastRefreshTime ? new Date(lastRefreshTime).toLocaleString() : 'Never'}</p></div>
+  </div>
+
+  <button class="btn green" style="padding:12px 30px;font-size:16px;" onclick="fetch('/api/refresh')">Start Full Refresh Now</button>
+
+  <div class="grid">
+    <div>
+      <table>
+        <thead><tr><th>Series</th><th>Episodes</th><th>Seasons</th><th>Actions</th></tr></thead>
+        <tbody>${tableRows || '<tr><td colspan="4" style="text-align:center">No series</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <div class="log-panel" id="log">
+      <div class="info">Admin panel ready • ${new Date().toLocaleString()}</div>
+      <div>Click any button → live logs here</div>
+    </div>
+  </div>
+
+  <div id="episodePicker">
+    <span class="close-btn" onclick="this.parentNode.style.display='none'">×</span>
+    <h3>Refresh Single Episode — <span id="pickerTitle"></span></h3>
+    <div style="margin:20px 0;">
+      <label>Season: <select id="seasonSelect"></select></label>
+      <label style="margin-left:15px;">Episode: <input type="number" id="episodeInput" min="1" style="width:80px;padding:8px;"></label>
+      <button class="btn green" onclick="refreshSingleEpisode()" style="margin-left:15px;">Go</button>
+    </div>
+  </div>
+
+  <div class="footer">Turkish123 M3U8 Scraper • ${new Date().getFullYear()}</div>
+</div>
+
+<script>
+const logEl = document.getElementById('log');
+function addLog(msg, type='info') {
+  const div = document.createElement('div');
+  div.className = 'log-entry ' + type;
+  div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Refresh whole series
+async function refreshSeries(id) {
+  if (!confirm('Refresh ALL episodes of this series now?')) return;
+  addLog(`Starting full refresh for series ${id}...`, 'info');
+  const r = await fetch('/api/series/' + id + '/refresh', {method:'POST'});
+  const j = await r.json();
+  addLog(j.message || 'Started', 'success');
+}
+
+// Check for new episodes (magnifying glass button)
+async function checkNewEpisodes(id) {
+  if (!confirm('Check this series for new episodes now?')) return;
+  addLog(`Checking new episodes for series ${id}...`, 'info');
+  const r = await fetch('/api/series/' + id + '/check-new', {method:'POST'});
+  const j = await r.json();
+  if (j.updated) {
+    addLog(`New episodes found! Updated to ${j.newTotal} total`, 'success');
+  ');
+  } else {
+    addLog(j.message || 'No new episodes', 'info');
+  }
+}
+
+// Single episode picker
+function showEpisodePicker(id, title) {
+  document.getElementById('pickerTitle').textContent = title;
+  document.getElementById('episodePicker').style.display = 'block';
+  const sel = document.getElementById('seasonSelect');
+  sel.innerHTML = '';
+  fetch('/api/series/' + id).then(r=>r.json()).then(d=>{
+    Object.keys(d.seasons).forEach(s=>{
+      const opt = document.createElement('option');
+      opt.value = s; opt.textContent = `Season ${s}`;
+      sel.appendChild(opt);
+    });
+  });
+}
+
+async function refreshSingleEpisode() {
+  const title = document.getElementById('pickerTitle').textContent;
+  const season = document.getElementById('seasonSelect').value;
+  const episode = document.getElementById('episodeInput').value;
+  if (!season || !episode) return alert('Fill both');
+  addLog(`Refreshing ${title} S${season}E${episode}...`, 'info');
+  document.getElementById('episodePicker').style.display = 'none';
+  const r = await fetch('/api/episode/refresh', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:parseInt(title.match(/ID: (\d+)/)?.[1] || id),season:parseInt(season),episode:parseInt(episode)})});
+  const j = await r.json();
+  addLog(j.message, j.success ? 'success' : 'error');
+}
+
+async function deleteSeries(id) {
+  if (!confirm('Delete this series permanently?')) return;
+  const r = await fetch('/api/series/' + id, {method:'DELETE'});
+  const j = await r.json();
+  if (j.success) { addLog('Series deleted', 'success'); setTimeout(()=>location.reload(),1000); }
+}
+</script>
+</body>
+</html>
+  `);
+});
+
+// ——— NEW: CHECK NEW EPISODES FOR ONE SERIES ———
+app.post('/api/series/:id/check-new', async (req, res) => {
+  const id = parseInt(req.params.id);
+  const series = seriesConfig[id];
+  if (!series) return res.status(404).json({ success: false, message: 'Series not found' });
+
+  res.json({ success: true, message: 'Checking for new episodes...' });
+
+  setImmediate(async () => {
+    let browser, page;
+    try {
+      browser = await getBrowser();
+      page = await browser.newPage();
+      await page.setRequestInterception(true);
+      page.on('request', req => {
+        ['image','stylesheet','font','media','websocket','manifest'].includes(req.resourceType()) ? req.abort() : req.continue();
+      });
+
+      const baseUrl = series.urlPattern.split('-episode-')[0];
+      await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await new Promise(r => setTimeout(r, 2500));
+
+      const episodeLinks = await page.$$eval('a[href*="episode-"]', links =>
+        links.map(a => {
+          const m = a.href.match(/episode-(\d+)/);
+          return m ? parseInt(m[1]) : 0;
+        }).filter(n => n > 0)
+      );
+
+      if (episodeLinks.length === 0) {
+        await sendTelegram(`No episodes found while checking\n${series.title}`);
+        return;
+      }
+
+      const maxEpisode = Math.max(...episodeLinks);
+      let totalCurrent = 0;
+      for (const s in series.seasons) totalCurrent += series.seasons[s].count;
+
+      if (maxEpisode > totalCurrent) {
+        const added = maxEpisode - totalCurrent;
+        const lastSeason = Math.max(...Object.keys(series.seasons).map(Number));
+        series.seasons[lastSeason].count = maxEpisode;
+        saveSeriesConfig();
+
+        await sendTelegram(`New Episodes Detected!\n<b>${series.title}</b>\nSeason ${lastSeason} updated to ${maxEpisode} episodes\n+${added} new episode(s) found`);
+        addLogToAll(`New episodes detected: ${series.title} → ${maxEpisode} total`, 'success');
+      } else {
+        await sendTelegram(`No new episodes\n${series.title} (still ${totalCurrent})`);
+      }
+    } catch (err) {
+      await sendTelegram(`Error checking new episodes\n${series.title}\n${err.message}`);
+    } finally {
+      if (page) await page.close().catch(()=>{});
+    }
+  });
 });
 
 app.post('/api/refresh',async(req,res)=>{res.json({success:true,message:'Started'});autoRefresh(true);});
