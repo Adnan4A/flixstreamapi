@@ -35,7 +35,7 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 28 },
-            2: { startEpisode: 29, count: 12 }
+            2: { startEpisode: 29, count: 14 }
         }
     },
     74823: {
@@ -57,7 +57,7 @@ const seriesConfig = {
         mediaType: 'tv',
         seasons: {
             1: { startEpisode: 1, count: 13 },
-            2: { startEpisode: 14, count: 11 }
+            2: { startEpisode: 14, count: 12 }
         }
     },
     
@@ -67,7 +67,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 6 }
+            1: { startEpisode: 1, count: 7 }
         }
     },
    301693: {
@@ -76,7 +76,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/sahtekarlar-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 8 }
+            1: { startEpisode: 1, count: 10 }
             
         }
     },
@@ -86,7 +86,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/guller-ve-gunahlar-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 8 }
+            1: { startEpisode: 1, count: 10 }
         }
     },
     246621: {
@@ -97,7 +97,7 @@ const seriesConfig = {
         seasons: {
             1: { startEpisode: 1, count: 15 },
             2: { startEpisode: 16, count: 34 },
-            3: { startEpisode: 50, count: 11 }
+            3: { startEpisode: 50, count: 16 }
           }
     },
      302063: {
@@ -106,7 +106,7 @@ const seriesConfig = {
         urlPattern: 'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',
         mediaType: 'tv',
         seasons: {
-            1: { startEpisode: 1, count: 8 }
+            1: { startEpisode: 1, count: 10 }
           
         }
     }
@@ -403,13 +403,82 @@ async function sendToFirestore(payload) {
 }
 
 // ============================================
-// AUTO-REFRESH SCHEDULER WITH AUTO-RESTART
+// IMPROVED AUTO-REFRESH SCHEDULER - FIX #1
 // ============================================
 let isRefreshing = false;
 let lastRefreshTime = null;
 let nextRefreshTime = null;
+let refreshTimer = null; // Store timer reference for better control
 const fs = require('fs');
 const REFRESH_MARKER_FILE = '/tmp/last_refresh_time.txt';
+
+// Helper function to format date in 12-hour format
+function formatDate12Hour(date) {
+    if (!date) return 'Never';
+    const options = { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    };
+    return date.toLocaleString('en-US', options);
+}
+
+// Helper function to calculate time remaining
+function getTimeRemaining(targetDate) {
+    if (!targetDate) return 'Not scheduled';
+    
+    const now = Date.now();
+    const msRemaining = targetDate - now;
+    
+    if (msRemaining <= 0) return 'Due now';
+    
+    const hours = Math.floor(msRemaining / (1000 * 60 * 60));
+    const minutes = Math.floor((msRemaining % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((msRemaining % (1000 * 60)) / 1000);
+    
+    return `${hours}h ${minutes}m ${seconds}s`;
+}
+
+// Schedule next refresh - IMPROVED
+function scheduleNextRefresh() {
+    // Clear any existing timer
+    if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = null;
+    }
+    
+    // Calculate next refresh time
+    nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL * 60 * 60 * 1000);
+    
+    log.info(`⏰ Next refresh scheduled for: ${formatDate12Hour(nextRefreshTime)}`);
+    log.info(`⏱️  Time until next refresh: ${getTimeRemaining(nextRefreshTime)}`);
+    
+    // Set timeout for next refresh
+    const msUntilRefresh = nextRefreshTime - Date.now();
+    
+    refreshTimer = setTimeout(() => {
+        if (!isRefreshing) {
+            log.info('⏰ Starting scheduled refresh...');
+            autoRefreshM3u8s(false).catch(err => {
+                log.error(`Scheduled refresh error: ${err.message}`);
+                // Reschedule even on error
+                scheduleNextRefresh();
+            });
+        } else {
+            log.warn('Skipping scheduled refresh - already in progress');
+            // Reschedule for later
+            scheduleNextRefresh();
+        }
+    }, msUntilRefresh);
+    
+    // Log confirmation
+    log.success(`✅ Refresh timer set successfully`);
+}
 
 async function autoRefreshM3u8s(isManual = false) {
     if (isRefreshing) {
@@ -476,7 +545,6 @@ async function autoRefreshM3u8s(isManual = false) {
         
         // Update last refresh time
         lastRefreshTime = new Date();
-        nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL * 60 * 60 * 1000);
         
         // Save refresh timestamp to file (persists across restarts)
         try {
@@ -492,7 +560,7 @@ Type: ${isManual ? '🔧 Manual' : '⏰ Scheduled'}
 ✅ Success: ${stats.success}
 ❌ Failed: ${stats.failed}
 ⏱️  Duration: ${duration}s
-🕒 ${new Date().toLocaleString()}
+🕒 Completed: ${formatDate12Hour(new Date())}
 🔄 Container restarting for fresh environment...
         `.trim();
         
@@ -541,79 +609,158 @@ app.get('/health', (req, res) => {
     });
 });
 
+// IMPROVED API STATUS ENDPOINT - FIX #3
 app.get('/api/status', (req, res) => {
-    const now = Date.now();
-    let timeRemaining = 'Calculating...';
+    const now = new Date();
+    const uptimeSeconds = process.uptime();
+    const uptimeHours = Math.floor(uptimeSeconds / 3600);
+    const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
+    const uptimeSecondsRem = Math.floor(uptimeSeconds % 60);
     
-    if (nextRefreshTime) {
-        const msRemaining = nextRefreshTime - now;
-        if (msRemaining > 0) {
-            const hours = Math.floor(msRemaining / (1000 * 60 * 60));
-            const minutes = Math.floor((msRemaining % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((msRemaining % (1000 * 60)) / 1000);
-            timeRemaining = `${hours}h ${minutes}m ${seconds}s`;
-        } else {
-            timeRemaining = 'Due now';
+    // Calculate total episodes across all series
+    let totalEpisodes = 0;
+    let totalSeasons = 0;
+    let seriesCount = Object.keys(seriesConfig).length;
+    
+    for (const movieId in seriesConfig) {
+        const series = seriesConfig[movieId];
+        for (const season in series.seasons) {
+            totalSeasons++;
+            totalEpisodes += series.seasons[season].count;
         }
     }
     
-    const formatDate = (date) => {
-        if (!date) return 'Never';
-        const options = { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric', 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: true
-        };
-        return date.toLocaleString('en-US', options);
-    };
-    
     res.json({
-        isRefreshing,
-        uptime: process.uptime(),
-        lastRefreshTime: formatDate(lastRefreshTime),
-        nextRefresh: isRefreshing ? 'In progress' : `On schedule - ${timeRemaining} remaining`,
-        nextRefreshAt: nextRefreshTime ? formatDate(nextRefreshTime) : 'Not scheduled yet',
-        message: isRefreshing ? 'Refresh in progress - server will restart soon' : 'Ready'
+        // Server Status
+        server: {
+            status: isRefreshing ? 'Refreshing' : 'Ready',
+            environment: ENV,
+            port: PORT,
+            uptime: `${uptimeHours}h ${uptimeMinutes}m ${uptimeSecondsRem}s`,
+            uptimeSeconds: Math.floor(uptimeSeconds),
+            currentTime: formatDate12Hour(now)
+        },
+        
+        // Refresh Information
+        refresh: {
+            isRefreshing: isRefreshing,
+            refreshInterval: `${REFRESH_INTERVAL} hours`,
+            lastRefreshTime: lastRefreshTime ? formatDate12Hour(lastRefreshTime) : 'Never',
+            lastRefreshTimestamp: lastRefreshTime ? lastRefreshTime.toISOString() : null,
+            nextRefreshTime: nextRefreshTime ? formatDate12Hour(nextRefreshTime) : 'Not scheduled yet',
+            nextRefreshTimestamp: nextRefreshTime ? nextRefreshTime.toISOString() : null,
+            timeUntilNextRefresh: getTimeRemaining(nextRefreshTime),
+            autoRestartEnabled: true
+        },
+        
+        // Content Statistics
+        content: {
+            totalSeries: seriesCount,
+            totalSeasons: totalSeasons,
+            totalEpisodes: totalEpisodes,
+            series: Object.keys(seriesConfig).map(movieId => ({
+                id: parseInt(movieId),
+                title: seriesConfig[movieId].title,
+                name: seriesConfig[movieId].name,
+                seasons: Object.keys(seriesConfig[movieId].seasons).length,
+                episodes: Object.values(seriesConfig[movieId].seasons).reduce((sum, s) => sum + s.count, 0)
+            }))
+        },
+        
+        // System Information
+        system: {
+            memoryUsage: {
+                heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MB`,
+                heapTotal: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)} MB`,
+                rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)} MB`
+            },
+            nodeVersion: process.version,
+            platform: process.platform
+        }
     });
 });
 
-app.post('/api/fetch-and-save/:movieId/:season/:episode', async (req, res) => {
+// SIMPLIFIED FETCH SINGLE EPISODE - FIX #2
+app.post('/api/fetch/:movieId/:season/:episode', async (req, res) => {
     try {
-        const { movieId, season, episode } = req.params;
+        const movieId = parseInt(req.params.movieId);
+        const season = parseInt(req.params.season);
+        const episode = parseInt(req.params.episode);
+        
         const series = seriesConfig[movieId];
         
         if (!series) {
-            return res.status(404).json({ success: false, error: 'Series not found' });
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Series not found',
+                availableSeries: Object.keys(seriesConfig).map(id => ({
+                    id: parseInt(id),
+                    title: seriesConfig[id].title
+                }))
+            });
         }
         
-        log.info(`Fetching: ${movieId} S${season}E${episode}`);
-        const m3u8Url = await fetchM3u8(parseInt(movieId), parseInt(season), parseInt(episode));
+        if (!series.seasons[season]) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Season ${season} not found`,
+                availableSeasons: Object.keys(series.seasons).map(s => parseInt(s))
+            });
+        }
+        
+        if (episode < 1 || episode > series.seasons[season].count) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Episode ${episode} not found. Valid range: 1-${series.seasons[season].count}`
+            });
+        }
+        
+        log.info(`📥 Fetching: ${series.title} S${season}E${episode}`);
+        
+        const m3u8Url = await fetchM3u8(movieId, season, episode);
         
         if (!m3u8Url) {
-            return res.status(500).json({ success: false, error: 'Could not fetch m3u8' });
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Could not fetch m3u8 link. Please try again.'
+            });
         }
         
         const payload = {
-            movieId: parseInt(movieId),
+            movieId: movieId,
             mediaType: series.mediaType,
             m3u8Url: m3u8Url,
             title: `${series.title} S${season}E${episode}`,
-            season: parseInt(season),
-            episode: parseInt(episode),
+            season: season,
+            episode: episode,
             quality: 'auto',
             timestamp: new Date().toISOString()
         };
         
         const saved = await sendToFirestore(payload);
-        res.json({ success: saved, payload: saved ? payload : null });
+        
+        if (saved) {
+            log.success(`✅ Saved: ${series.title} S${season}E${episode}`);
+            res.json({ 
+                success: true, 
+                message: 'Episode fetched and saved successfully',
+                data: payload
+            });
+        } else {
+            log.error(`❌ Failed to save: ${series.title} S${season}E${episode}`);
+            res.status(500).json({ 
+                success: false, 
+                error: 'Failed to save to database',
+                m3u8Url: m3u8Url // Still return the URL even if save failed
+            });
+        }
         
     } catch (error) {
-        log.error(`Error: ${error.message}`);
-        res.status(500).json({ success: false, error: error.message });
+        log.error(`❌ Error: ${error.message}`);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
     }
 });
 
@@ -711,13 +858,14 @@ app.use((err, req, res, next) => {
 });
 
 // ============================================
-// STARTUP WITH AUTO-RESTART
+// STARTUP WITH IMPROVED SCHEDULING - FIX #1
 // ============================================
 const server = app.listen(PORT, () => {
     log.info(`═══════════════════════════════════════`);
-    log.info(`🚀 M3U8 Server (Enhanced Cleanup + Auto-Restart)`);
+    log.info(`🚀 M3U8 Server (Improved Scheduling)`);
     log.info(`Port: ${PORT}`);
     log.info(`Refresh Interval: ${REFRESH_INTERVAL}h`);
+    log.info(`Current Time: ${formatDate12Hour(new Date())}`);
     log.info(`Uptime: ${process.uptime()}s`);
     log.info(`═══════════════════════════════════════`);
     
@@ -731,18 +879,13 @@ const server = app.listen(PORT, () => {
             if (minutesSinceRefresh < 30) {
                 shouldSkipInitial = true;
                 lastRefreshTime = new Date(lastRefreshTimestamp);
-                nextRefreshTime = new Date(Date.now() + REFRESH_INTERVAL * 60 * 60 * 1000);
                 
                 log.info(`🔄 Post-restart detected (last refresh: ${Math.floor(minutesSinceRefresh)} min ago)`);
-                log.info(`⏰ Next refresh scheduled: ${nextRefreshTime.toLocaleString('en-US', { 
-                    weekday: 'short', 
-                    month: 'short', 
-                    day: 'numeric', 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    hour12: true 
-                })}`);
-                log.info(`⏸️  Skipping initial refresh - waiting ${REFRESH_INTERVAL} hour(s)...`);
+                log.info(`📅 Last refresh: ${formatDate12Hour(lastRefreshTime)}`);
+                log.info(`⏸️  Skipping initial refresh - scheduling next one...`);
+                
+                // Schedule next refresh based on last refresh time
+                scheduleNextRefresh();
             }
         }
     } catch (err) {
@@ -762,24 +905,18 @@ const server = app.listen(PORT, () => {
     }
     
     log.info(`═══════════════════════════════════════`);
-    
-    // Scheduled refresh every X hours
-    setInterval(() => {
-        if (!isRefreshing) {
-            log.info('⏰ Starting scheduled refresh...');
-            autoRefreshM3u8s(false).catch(err => {
-                log.error(`Scheduled refresh error: ${err.message}`);
-                setTimeout(() => process.exit(1), 2000);
-            });
-        } else {
-            log.warn('Skipping scheduled refresh - already in progress');
-        }
-    }, REFRESH_INTERVAL * 60 * 60 * 1000);
 });
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
     log.info('Received SIGTERM - shutting down gracefully...');
+    
+    // Clear refresh timer
+    if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = null;
+    }
+    
     await forceCleanupBrowsers();
     server.close(() => {
         log.info('Server closed');
@@ -804,4 +941,88 @@ process.on('unhandledRejection', (reason) => {
     sendTelegramMessage(`<b>⚠️ Unhandled Rejection</b>\n${reason}`);
 });
 
-module.exports = { app, fetchM3u8, sendToFirestore, sendTelegramMessage };
+module.exports = { app, fetchM3u8, sendToFirestore, sendTelegramMessage };d);
+        
+        if (saved) {
+            log.success(`✅ Saved: ${series.title} S${season}E${episode}`);
+            res.json({ 
+                success: true, 
+                message: 'Episode fetched and saved successfully',
+                data: payload
+            });
+        } else {
+            log.error(`❌ Failed to save: ${series.title} S${season}E${episode}`);
+            res.status(500).json({ 
+                success: false, 
+                error: 'Failed to save to database',
+                m3u8Url: m3u8Url // Still return the URL even if save failed
+            });
+        }
+        
+    } catch (error) {
+        log.error(`❌ Error: ${error.message}`);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Simplified GET endpoint for single episode (browser-friendly)
+app.get('/api/fetch/:movieId/:season/:episode', async (req, res) => {
+    try {
+        const movieId = parseInt(req.params.movieId);
+        const season = parseInt(req.params.season);
+        const episode = parseInt(req.params.episode);
+        
+        const series = seriesConfig[movieId];
+        
+        if (!series) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Series not found',
+                availableSeries: Object.keys(seriesConfig).map(id => ({
+                    id: parseInt(id),
+                    title: seriesConfig[id].title
+                }))
+            });
+        }
+        
+        if (!series.seasons[season]) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Season ${season} not found`,
+                availableSeasons: Object.keys(series.seasons).map(s => parseInt(s))
+            });
+        }
+        
+        if (episode < 1 || episode > series.seasons[season].count) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Episode ${episode} not found. Valid range: 1-${series.seasons[season].count}`
+            });
+        }
+        
+        log.info(`📥 Fetching: ${series.title} S${season}E${episode}`);
+        
+        const m3u8Url = await fetchM3u8(movieId, season, episode);
+        
+        if (!m3u8Url) {
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Could not fetch m3u8 link. Please try again.'
+            });
+        }
+        
+        const payload = {
+            movieId: movieId,
+            mediaType: series.mediaType,
+            m3u8Url: m3u8Url,
+            title: `${series.title} S${season}E${episode}`,
+            season: season,
+            episode: episode,
+            quality: 'auto',
+            timestamp: new Date().toISOString()
+        };
+        
+        const saved = await sendToFirestore(payloa
