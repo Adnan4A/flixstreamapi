@@ -53,7 +53,7 @@ async function getBrowser() {
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding'
       ],
-      timeout: 30000
+      timeout: 60000
     });
     sharedBrowser.on('disconnected', () => { sharedBrowser = null; });
   }
