@@ -1,4 +1,4 @@
-// server.js - MEMORY OPTIMIZED FOR RAILWAY FREE TIER - COMPLETE VERSION
+// server.js - MEMORY OPTIMIZED FOR RAILWAY FREE TIER - COMPLETE VERSIONasd
 const express=require('express');
 const puppeteer=require('puppeteer-extra');
 const StealthPlugin=require('puppeteer-extra-plugin-stealth');
