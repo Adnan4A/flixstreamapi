@@ -8,6 +8,7 @@ puppeteer.use(StealthPlugin());
 const cors = require('cors');
 const https = require('https');
 const http = require('http');
+const fs = require('fs');
 const { exec } = require('child_process');
 
 // ===================
@@ -25,8 +26,8 @@ const CONFIG = {
     botToken: '8591460817:AAFfvWMhzzdVSyQNQ-yTz_gh8JRpilaWYUY',
     chatId: '8254382347'
   },
-  maxConcurrentPages: 3,
-  batchSize: 3
+  maxConcurrentPages: 1,  // Sequential for stability on free tier
+  batchSize: 1            // One at a time to prevent memory issues
 };
 
 // Episode check schedule (day: 0=Sun, 1=Mon, ..., 6=Sat)
@@ -211,43 +212,79 @@ async function sendTelegram(message) {
 // ===================
 // BROWSER MANAGEMENT
 // ===================
-async function getBrowser() {
-  if (!state.browser || !state.browser.isConnected()) {
-    log.info('Launching new browser instance...');
-    
-    state.browser = await puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-        '--single-process',
-        '--disable-extensions',
-        '--mute-audio',
-        '--no-first-run',
-        '--disable-background-timer-throttling',
-        '--disable-renderer-backgrounding',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-blink-features=AutomationControlled',
-        '--js-flags="--max-old-space-size=256"'
-      ],
-      timeout: 60000,
-      protocolTimeout: 30000
-    });
+let browserLock = false;
 
-    state.browser.on('disconnected', () => {
-      log.warn('Browser disconnected');
-      state.browser = null;
-    });
-
-    state.browser.on('error', (err) => {
-      log.error(`Browser error: ${err.message}`);
-    });
-
-    log.success('Browser launched');
+async function getBrowser(retries = 3) {
+  // Wait if another process is launching browser
+  while (browserLock) {
+    await new Promise(r => setTimeout(r, 500));
   }
+
+  if (!state.browser || !state.browser.isConnected()) {
+    browserLock = true;
+    
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        log.info(`Launching browser (attempt ${attempt}/${retries})...`);
+        
+        // Kill any orphaned processes first
+        await new Promise(resolve => {
+          exec('pkill -9 chrome || pkill -9 chromium || true', () => resolve());
+        });
+        
+        // Force GC before launching
+        if (global.gc) global.gc();
+        
+        state.browser = await puppeteer.launch({
+          headless: 'new',
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-zygote',
+            '--single-process',
+            '--disable-extensions',
+            '--mute-audio',
+            '--no-first-run',
+            '--disable-background-timer-throttling',
+            '--disable-renderer-backgrounding',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--disable-blink-features=AutomationControlled',
+            '--js-flags=--max-old-space-size=128'
+          ],
+          timeout: 60000,
+          protocolTimeout: 60000
+        });
+
+        state.browser.on('disconnected', () => {
+          log.warn('Browser disconnected - will reconnect on next request');
+          state.browser = null;
+        });
+
+        state.browser.on('error', (err) => {
+          log.error(`Browser error: ${err.message}`);
+          state.browser = null;
+        });
+
+        log.success('Browser launched');
+        browserLock = false;
+        return state.browser;
+        
+      } catch (err) {
+        log.error(`Browser launch failed (attempt ${attempt}): ${err.message}`);
+        state.browser = null;
+        
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+    }
+    
+    browserLock = false;
+    throw new Error('Failed to launch browser after ' + retries + ' attempts');
+  }
+  
   return state.browser;
 }
 
@@ -320,8 +357,10 @@ async function sendToWebhook(payload) {
 // ===================
 // M3U8 EXTRACTION
 // ===================
-async function fetchM3u8(seriesId, seasonNum, episodeNum) {
+async function fetchM3u8(seriesId, seasonNum, episodeNum, retryCount = 0) {
+  const maxRetries = 2;
   const series = seriesConfig[seriesId];
+  
   if (!series) {
     log.error(`Series ${seriesId} not found`);
     return null;
@@ -337,21 +376,10 @@ async function fetchM3u8(seriesId, seasonNum, episodeNum) {
   const url = series.urlPattern.replace('{episode}', actualEpisode);
   const taskId = `${series.title} S${seasonNum}E${episodeNum}`;
 
-  // Wait if too many pages open
-  const waitStart = Date.now();
-  while (state.activePages.size >= CONFIG.maxConcurrentPages) {
-    if (Date.now() - waitStart > 30000) {
-      log.warn(`${taskId} - Timeout waiting for available slot`);
-      return null;
-    }
-    await new Promise(r => setTimeout(r, 500));
-  }
-
   let page = null;
-  const pageId = `page-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
   try {
-    state.activePages.add(pageId);
+    // Get browser (will reconnect if disconnected)
     const browser = await getBrowser();
     page = await browser.newPage();
 
@@ -382,7 +410,7 @@ async function fetchM3u8(seriesId, seasonNum, episodeNum) {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
     log.info(`${taskId} - Fetching: ${url}`);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
     // Quick check if m3u8 already captured
     if (m3u8Url) {
@@ -392,16 +420,16 @@ async function fetchM3u8(seriesId, seasonNum, episodeNum) {
 
     // Click play button if exists
     try {
-      await page.waitForSelector('.jw-icon-display, .vjs-big-play-button, [class*="play"]', { timeout: 2000 });
+      await page.waitForSelector('.jw-icon-display, .vjs-big-play-button, [class*="play"]', { timeout: 3000 });
       await page.click('.jw-icon-display, .vjs-big-play-button, [class*="play"]').catch(() => {});
     } catch (e) {
       // No play button, continue
     }
 
-    // Race: wait for m3u8 or timeout (max 3 seconds after click)
-    const result = await Promise.race([
+    // Race: wait for m3u8 or timeout (max 5 seconds after click)
+    await Promise.race([
       m3u8Promise,
-      new Promise(r => setTimeout(() => r(null), 3000))
+      new Promise(r => setTimeout(() => r(null), 5000))
     ]);
 
     if (m3u8Url) {
@@ -414,12 +442,31 @@ async function fetchM3u8(seriesId, seasonNum, episodeNum) {
 
   } catch (error) {
     log.error(`${taskId} - Error: ${error.message}`);
+    
+    // Retry on browser disconnect or timeout
+    if (retryCount < maxRetries && (error.message.includes('disconnect') || error.message.includes('timeout') || error.message.includes('Target closed'))) {
+      log.info(`${taskId} - Retrying (${retryCount + 1}/${maxRetries})...`);
+      
+      // Clean up and wait before retry
+      if (page) await page.close().catch(() => {});
+      await cleanupBrowser();
+      await new Promise(r => setTimeout(r, 2000));
+      
+      return fetchM3u8(seriesId, seasonNum, episodeNum, retryCount + 1);
+    }
+    
     return null;
   } finally {
     if (page) {
-      await page.close().catch(() => {});
+      try {
+        await page.close();
+      } catch (e) {
+        // Page already closed, ignore
+      }
     }
-    state.activePages.delete(pageId);
+    
+    // Run GC after each page to keep memory low
+    if (global.gc) global.gc();
   }
 }
 
