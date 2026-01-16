@@ -784,14 +784,15 @@ const server = app.listen(CONFIG.port, () => {
   log.info(`GC available: ${!!global.gc}`);
   log.info(`========================================`);
 
-  // Schedule refresh loop
-  scheduleNextRefresh();
-  
   // Start daily episode check scheduler
   scheduleDailyEpisodeCheck();
   
   // Send startup notification
   sendTelegram(telegram.startup());
+  
+  // Run first refresh immediately on startup
+  log.info('Starting initial refresh...');
+  refreshAllEpisodes(false);
 });
 
 // ===================
