@@ -31,10 +31,12 @@ const CONFIG = {
 
 // Episode check schedule (day: 0=Sun, 1=Mon, ..., 6=Sat)
 const episodeCheckSchedule = {
-  283123: { name: 'Esref Ruya', day: 2, hour: 3 }  // Tuesday at 3 AM
+  283123: { name: 'Esref Ruya', day: 2, hour: 3 },      // Tuesday 3 AM
+  274556: { name: 'Far Away', day: 0, hour: 3 },        // Sunday 3 AM
+  302063: { name: 'Deep in Love', day: 5, hour: 3 }     // Friday 3 AM
 };
 
-// Single series for testing
+// Series Configuration
 const seriesConfig = {
   283123: {
     name: 'Esref Ruya',
@@ -45,8 +47,19 @@ const seriesConfig = {
       1: { startEpisode: 1, count: 13 },
       2: { startEpisode: 14, count: 12 }
     }
-  }
-};
+  },
+  274556: {
+    name: 'Uzak Sehir',
+    title: 'Far Away',
+    urlPattern: 'https://hds.turkish123.com/uzak-sehir-episode-{episode}/',
+    mediaType: 'tv',
+    seasons: {
+      1: { startEpisode: 1, count: 28 },
+      2: { startEpisode: 29, count: 12 }
+    }
+  },
+302063:{name:'tasacak-bu-deniz',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}}};
+
 
 // ===================
 // STATE
@@ -353,30 +366,43 @@ async function fetchM3u8(seriesId, seasonNum, episodeNum) {
       }
     });
 
-    // Capture m3u8 URL
+    // Capture m3u8 URL - resolve immediately when found
     let m3u8Url = null;
-    page.on('response', async (response) => {
+    let m3u8Resolve = null;
+    const m3u8Promise = new Promise(resolve => { m3u8Resolve = resolve; });
+
+    page.on('response', (response) => {
       const responseUrl = response.url();
-      if (responseUrl.includes('.m3u8') && !responseUrl.includes('bumper')) {
+      if (responseUrl.includes('.m3u8') && !responseUrl.includes('bumper') && !m3u8Url) {
         m3u8Url = responseUrl;
+        m3u8Resolve(responseUrl);
       }
     });
 
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
     
     log.info(`${taskId} - Fetching: ${url}`);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+
+    // Quick check if m3u8 already captured
+    if (m3u8Url) {
+      log.success(`${taskId} - Found (instant): ${m3u8Url.substring(0, 60)}...`);
+      return m3u8Url;
+    }
 
     // Click play button if exists
     try {
-      await page.waitForSelector('.jw-icon-display, .vjs-big-play-button, [class*="play"]', { timeout: 5000 });
+      await page.waitForSelector('.jw-icon-display, .vjs-big-play-button, [class*="play"]', { timeout: 2000 });
       await page.click('.jw-icon-display, .vjs-big-play-button, [class*="play"]').catch(() => {});
     } catch (e) {
       // No play button, continue
     }
 
-    // Wait for m3u8 to load
-    await new Promise(r => setTimeout(r, 5000));
+    // Race: wait for m3u8 or timeout (max 3 seconds after click)
+    const result = await Promise.race([
+      m3u8Promise,
+      new Promise(r => setTimeout(() => r(null), 3000))
+    ]);
 
     if (m3u8Url) {
       log.success(`${taskId} - Found: ${m3u8Url.substring(0, 60)}...`);
@@ -510,6 +536,37 @@ async function refreshAllEpisodes(isManual = false) {
 }
 
 // ===================
+// CONFIG PERSISTENCE
+// ===================
+const CONFIG_FILE = '/tmp/series_config.json';
+
+function saveSeriesConfig() {
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(seriesConfig, null, 2));
+    log.success('Series config saved to disk');
+  } catch (e) {
+    log.error(`Failed to save config: ${e.message}`);
+  }
+}
+
+function loadSeriesConfig() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      // Merge saved counts into current config
+      for (const id in saved) {
+        if (seriesConfig[id]) {
+          seriesConfig[id].seasons = saved[id].seasons;
+        }
+      }
+      log.success('Series config loaded from disk');
+    }
+  } catch (e) {
+    log.warn(`Failed to load config: ${e.message}`);
+  }
+}
+
+// ===================
 // NEW EPISODE DETECTION
 // ===================
 async function checkForNewEpisodes(seriesId = null) {
@@ -525,6 +582,8 @@ async function checkForNewEpisodes(seriesId = null) {
     }
 
     let page = null;
+    let newEpisodesFound = 0;
+
     try {
       const browser = await getBrowser();
       page = await browser.newPage();
@@ -546,46 +605,87 @@ async function checkForNewEpisodes(seriesId = null) {
       const seasonKeys = Object.keys(series.seasons).map(Number);
       const lastSeason = Math.max(...seasonKeys);
       const lastSeasonData = series.seasons[lastSeason];
-      const currentLastEp = lastSeasonData.startEpisode + lastSeasonData.count - 1;
+      const originalCount = lastSeasonData.count;
+      let currentLastEp = lastSeasonData.startEpisode + lastSeasonData.count - 1;
 
-      // Check next episode
-      const nextEp = currentLastEp + 1;
-      const checkUrl = series.urlPattern.replace('{episode}', nextEp);
+      // Keep checking until we find no more new episodes
+      let keepChecking = true;
+      while (keepChecking) {
+        const nextEp = currentLastEp + 1;
+        const checkUrl = series.urlPattern.replace('{episode}', nextEp);
 
-      log.info(`${series.title}: Checking episode ${nextEp} at ${checkUrl}`);
+        log.info(`${series.title}: Checking episode ${nextEp}...`);
 
-      const response = await page.goto(checkUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      const status = response.status();
+        const response = await page.goto(checkUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        const status = response.status();
 
-      // Check if page has video player (indicates valid episode)
-      const hasPlayer = await page.evaluate(() => {
-        return !!(
-          document.querySelector('.jw-video') ||
-          document.querySelector('video') ||
-          document.querySelector('[class*="player"]') ||
-          document.querySelector('iframe[src*="embed"]')
+        // Check if page has video player
+        const hasPlayer = await page.evaluate(() => {
+          return !!(
+            document.querySelector('.jw-video') ||
+            document.querySelector('video') ||
+            document.querySelector('[class*="player"]') ||
+            document.querySelector('iframe[src*="embed"]')
+          );
+        });
+
+        if (status === 200 && hasPlayer) {
+          newEpisodesFound++;
+          lastSeasonData.count += 1;
+          currentLastEp = nextEp;
+          log.success(`${series.title}: Episode ${nextEp} FOUND! (${newEpisodesFound} new)`);
+        } else {
+          keepChecking = false;
+        }
+      }
+
+      if (newEpisodesFound > 0) {
+        // Save updated config
+        saveSeriesConfig();
+
+        await sendTelegram(
+          `🆕 <b>New Episodes Found!</b>\n\n` +
+          `📺 ${series.title}\n` +
+          `🎬 ${newEpisodesFound} new episode${newEpisodesFound > 1 ? 's' : ''}\n` +
+          `📁 Season ${lastSeason}: ${originalCount} → ${lastSeasonData.count}\n` +
+          `🔄 Scraping new episodes...\n\n` +
+          `<i>${new Date().toUTCString()}</i>`
         );
-      });
 
-      if (status === 200 && hasPlayer) {
-        // New episode found!
-        log.success(`${series.title}: NEW EPISODE ${nextEp} FOUND!`);
-
-        // Update series config
-        lastSeasonData.count += 1;
-
-        await sendTelegram(telegram.newEpisode(series, nextEp, lastSeason, lastSeasonData.count));
+        // Scrape the new episodes
+        log.info(`${series.title}: Scraping ${newEpisodesFound} new episodes...`);
+        let scraped = 0;
+        for (let i = 0; i < newEpisodesFound; i++) {
+          const epNum = originalCount + i + 1;
+          const m3u8Url = await fetchM3u8(id, lastSeason, epNum);
+          if (m3u8Url) {
+            await sendToWebhook({
+              movieId: id,
+              mediaType: series.mediaType,
+              m3u8Url,
+              title: `${series.title} S${lastSeason}E${epNum}`,
+              season: lastSeason,
+              episode: epNum,
+              quality: 'auto',
+              timestamp: new Date().toISOString()
+            });
+            scraped++;
+          }
+        }
+        log.success(`${series.title}: Scraped ${scraped}/${newEpisodesFound} new episodes`);
 
         results.push({
           seriesId: id,
           title: series.title,
           status: 'updated',
           season: lastSeason,
-          newEpisode: nextEp,
+          newEpisodes: newEpisodesFound,
+          scraped: scraped,
+          oldCount: originalCount,
           newCount: lastSeasonData.count
         });
       } else {
-        log.info(`${series.title}: No new episode yet`);
+        log.info(`${series.title}: No new episodes`);
         results.push({
           seriesId: id,
           title: series.title,
@@ -626,9 +726,6 @@ function scheduleDailyEpisodeCheck() {
   // Check every hour
   setInterval(check, 60 * 60 * 1000);
   
-  // Run initial check
-  check();
-  
   log.info('Daily episode check scheduler started');
 }
 
@@ -659,6 +756,179 @@ function scheduleNextRefresh() {
 // ===================
 // API ROUTES
 // ===================
+
+// Main UI Dashboard
+app.get('/', (req, res) => {
+  const mem = process.memoryUsage();
+  const seriesList = Object.entries(seriesConfig).map(([id, s]) => {
+    const totalEps = Object.values(s.seasons).reduce((sum, season) => sum + season.count, 0);
+    return `<div class="series-card">
+      <h3>${s.title}</h3>
+      <p>ID: ${id} | Seasons: ${Object.keys(s.seasons).length} | Episodes: ${totalEps}</p>
+      <div class="btn-group">
+        <button onclick="checkNew(${id})">🔍 Check New</button>
+        <button onclick="refreshSeries(${id})">🔄 Refresh</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Scrapper Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 20px; min-height: 100vh; }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { text-align: center; margin-bottom: 30px; color: #fff; }
+    .status-bar { background: #1a1a1a; padding: 15px 20px; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+    .status-item { text-align: center; }
+    .status-item span { display: block; font-size: 12px; color: #888; }
+    .status-item strong { color: #4ade80; font-size: 18px; }
+    .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+    .actions button { padding: 15px; font-size: 16px; border: none; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+    .btn-check { background: #3b82f6; color: white; }
+    .btn-refresh { background: #22c55e; color: white; }
+    .btn-cleanup { background: #f59e0b; color: white; }
+    .actions button:hover { transform: translateY(-2px); opacity: 0.9; }
+    .actions button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .series-card { background: #1a1a1a; padding: 20px; border-radius: 10px; margin-bottom: 15px; }
+    .series-card h3 { margin-bottom: 10px; color: #fff; }
+    .series-card p { color: #888; margin-bottom: 15px; }
+    .btn-group { display: flex; gap: 10px; }
+    .btn-group button { padding: 8px 16px; font-size: 14px; border: none; border-radius: 6px; cursor: pointer; background: #333; color: #fff; }
+    .btn-group button:hover { background: #444; }
+    .log { background: #1a1a1a; padding: 20px; border-radius: 10px; margin-top: 20px; max-height: 400px; overflow-y: auto; }
+    .log h3 { margin-bottom: 15px; }
+    .log-entry { padding: 8px 12px; margin-bottom: 5px; border-radius: 6px; font-family: monospace; font-size: 13px; }
+    .log-success { background: #064e3b; color: #4ade80; }
+    .log-error { background: #450a0a; color: #f87171; }
+    .log-info { background: #1e3a5f; color: #60a5fa; }
+    .log-pending { background: #333; color: #888; }
+    #logContainer { min-height: 100px; }
+    .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 8px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 Scrapper Dashboard</h1>
+    
+    <div class="status-bar">
+      <div class="status-item"><span>Status</span><strong id="status">${state.isRefreshing ? '🔄 Refreshing' : '✅ Ready'}</strong></div>
+      <div class="status-item"><span>Memory</span><strong>${Math.round(mem.heapUsed / 1024 / 1024)}MB</strong></div>
+      <div class="status-item"><span>Uptime</span><strong>${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m</strong></div>
+      <div class="status-item"><span>Next Refresh</span><strong>${state.nextRefreshTime ? new Date(state.nextRefreshTime).toLocaleTimeString() : 'N/A'}</strong></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-check" onclick="checkAllNew()">🔍 Check All New Episodes</button>
+      <button class="btn-refresh" onclick="refreshAll()">🔄 Refresh All Series</button>
+      <button class="btn-cleanup" onclick="cleanup()">🧹 Cleanup Memory</button>
+    </div>
+
+    <h2 style="margin-bottom: 15px;">📺 Series</h2>
+    ${seriesList}
+
+    <div class="log">
+      <h3>📋 Activity Log</h3>
+      <div id="logContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    const logContainer = document.getElementById('logContainer');
+    
+    function addLog(msg, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry log-' + type;
+      entry.textContent = new Date().toLocaleTimeString() + ' - ' + msg;
+      logContainer.insertBefore(entry, logContainer.firstChild);
+      if (logContainer.children.length > 50) logContainer.removeChild(logContainer.lastChild);
+    }
+
+    async function checkAllNew() {
+      addLog('Checking all series for new episodes...', 'pending');
+      try {
+        const res = await fetch('/api/check-new');
+        const data = await res.json();
+        if (data.success) {
+          data.results.forEach(r => {
+            if (r.status === 'updated') {
+              addLog(r.title + ': ' + r.newEpisodes + ' NEW EPISODE(S)! (S' + r.season + ': ' + r.oldCount + ' → ' + r.newCount + ')', 'success');
+            } else if (r.status === 'up_to_date') {
+              addLog(r.title + ': Up to date', 'info');
+            } else {
+              addLog(r.title + ': Error - ' + r.error, 'error');
+            }
+          });
+        }
+      } catch (e) {
+        addLog('Error: ' + e.message, 'error');
+      }
+    }
+
+    async function checkNew(id) {
+      addLog('Checking series ' + id + ' for new episodes...', 'pending');
+      try {
+        const res = await fetch('/api/check-new/' + id);
+        const data = await res.json();
+        if (data.success && data.results[0]) {
+          const r = data.results[0];
+          if (r.status === 'updated') {
+            addLog(r.title + ': ' + r.newEpisodes + ' NEW EPISODE(S)! (S' + r.season + ': ' + r.oldCount + ' → ' + r.newCount + ')', 'success');
+          } else if (r.status === 'up_to_date') {
+            addLog(r.title + ': Up to date', 'info');
+          } else {
+            addLog(r.title + ': Error - ' + r.error, 'error');
+          }
+        }
+      } catch (e) {
+        addLog('Error: ' + e.message, 'error');
+      }
+    }
+
+    async function refreshAll() {
+      addLog('Starting full refresh...', 'pending');
+      document.getElementById('status').textContent = '🔄 Refreshing';
+      try {
+        const res = await fetch('/api/refresh');
+        const data = await res.json();
+        addLog('Refresh started in background', 'success');
+      } catch (e) {
+        addLog('Error: ' + e.message, 'error');
+      }
+    }
+
+    async function refreshSeries(id) {
+      addLog('Refreshing series ' + id + '...', 'pending');
+      try {
+        const res = await fetch('/api/refresh/' + id, { method: 'POST' });
+        const data = await res.json();
+        addLog('Series refresh started', 'success');
+      } catch (e) {
+        addLog('Error: ' + e.message, 'error');
+      }
+    }
+
+    async function cleanup() {
+      addLog('Running cleanup...', 'pending');
+      try {
+        const res = await fetch('/api/cleanup', { method: 'POST' });
+        const data = await res.json();
+        addLog('Cleanup done: ' + data.memoryBefore + ' → ' + data.memoryAfter, 'success');
+      } catch (e) {
+        addLog('Error: ' + e.message, 'error');
+      }
+    }
+
+    addLog('Dashboard loaded', 'info');
+  </script>
+</body>
+</html>`);
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -666,6 +936,25 @@ app.get('/health', (req, res) => {
     isRefreshing: state.isRefreshing,
     uptime: process.uptime()
   });
+});
+
+// Get all series config
+app.get('/api/series', (req, res) => {
+  const series = Object.entries(seriesConfig).map(([id, s]) => {
+    const totalEps = Object.values(s.seasons).reduce((sum, season) => sum + season.count, 0);
+    const schedule = episodeCheckSchedule[id];
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return {
+      id: parseInt(id),
+      name: s.name,
+      title: s.title,
+      seasons: Object.keys(s.seasons).length,
+      episodes: totalEps,
+      checkDay: schedule ? days[schedule.day] : 'N/A',
+      checkHour: schedule ? `${schedule.hour}:00` : 'N/A'
+    };
+  });
+  res.json({ success: true, count: series.length, series });
 });
 
 app.get('/api/status', (req, res) => {
@@ -700,6 +989,42 @@ app.get('/api/refresh', async (req, res) => {
   refreshAllEpisodes(true);
 });
 
+// Refresh single series
+app.post('/api/refresh/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  const series = seriesConfig[id];
+  if (!series) {
+    return res.status(404).json({ success: false, error: 'Series not found' });
+  }
+  
+  res.json({ success: true, message: `Refreshing ${series.title}` });
+  
+  // Refresh single series in background
+  (async () => {
+    log.info(`Single series refresh: ${series.title}`);
+    for (const seasonNum in series.seasons) {
+      const seasonData = series.seasons[seasonNum];
+      for (let ep = 1; ep <= seasonData.count; ep++) {
+        const m3u8Url = await fetchM3u8(id, parseInt(seasonNum), ep);
+        if (m3u8Url) {
+          await sendToWebhook({
+            movieId: id,
+            mediaType: series.mediaType,
+            m3u8Url,
+            title: `${series.title} S${seasonNum}E${ep}`,
+            season: parseInt(seasonNum),
+            episode: ep,
+            quality: 'auto',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+    }
+    await cleanupBrowser();
+    log.success(`Single series refresh complete: ${series.title}`);
+  })();
+});
+
 app.post('/api/cleanup', async (req, res) => {
   const memBefore = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
   await cleanupBrowser();
@@ -726,9 +1051,31 @@ app.post('/api/failed/clear', (req, res) => {
   res.json({ success: true, message: 'Failed episodes cleared' });
 });
 
+app.get('/api/check-new', async (req, res) => {
+  try {
+    const results = await checkForNewEpisodes();
+    res.json({ success: true, results });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/check-new', async (req, res) => {
   try {
     const results = await checkForNewEpisodes();
+    res.json({ success: true, results });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/check-new/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!seriesConfig[id]) {
+    return res.status(404).json({ success: false, error: 'Series not found' });
+  }
+  try {
+    const results = await checkForNewEpisodes(id);
     res.json({ success: true, results });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -784,6 +1131,9 @@ const server = app.listen(CONFIG.port, () => {
   log.info(`GC available: ${!!global.gc}`);
   log.info(`========================================`);
 
+  // Load saved series config (episode counts)
+  loadSeriesConfig();
+  
   // Start daily episode check scheduler
   scheduleDailyEpisodeCheck();
   
