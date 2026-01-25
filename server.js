@@ -34,7 +34,10 @@ const CONFIG = {
 const episodeCheckSchedule = {
   283123: { name: 'Esref Ruya', day: 2, hour: 3 },      // Tuesday 3 AM
   274556: { name: 'Far Away', day: 0, hour: 3 },        // Sunday 3 AM
-  302063: { name: 'Deep in Love', day: 5, hour: 3 }     // Friday 3 AM
+  302063: { name: 'Deep in Love', day: 5, hour: 3 },    // Friday 3 AM
+  306529: { name: 'A.B.I', day: 5, hour: 3 },          // Friday 3 AM
+  302658: { name: 'Founder Orhan', day: 2, hour: 3 }   // Friday 3 AM  
+  
 };
 
 // Series Configuration
@@ -46,7 +49,17 @@ const seriesConfig = {
     mediaType: 'tv',
     seasons: {
       1: { startEpisode: 1, count: 13 },
-      2: { startEpisode: 14, count: 12 }
+      2: { startEpisode: 14, count: 16 }
+    }
+  },
+  306529: {
+    name: 'A.B.I',
+    title: 'A.B.I',
+    urlPattern: 'https://hds.turkish123.com/abi-episode-{episode}/',
+    mediaType: 'tv',
+    seasons: {
+      1: { startEpisode: 1, count: 2 },
+    
     }
   },
   274556: {
@@ -56,10 +69,13 @@ const seriesConfig = {
     mediaType: 'tv',
     seasons: {
       1: { startEpisode: 1, count: 28 },
-      2: { startEpisode: 29, count: 12 }
+      2: { startEpisode: 29, count: 18 }
     }
   },
-302063:{name:'tasacak-bu-deniz',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:8}}}};
+  	
+302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:11}}},
+
+302063:{name:'tasacak-bu-deniz',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:15}}}};
 
 
 // ===================
