@@ -49,7 +49,7 @@ const seriesConfig = {
     mediaType: 'tv',
     seasons: {
       1: { startEpisode: 1, count: 13 },
-      2: { startEpisode: 14, count: 16 }
+      2: { startEpisode: 14, count: 18 }
     }
   },
   306529: {
@@ -58,7 +58,7 @@ const seriesConfig = {
     urlPattern: 'https://hds.turkish123.com/abi-episode-{episode}/',
     mediaType: 'tv',
     seasons: {
-      1: { startEpisode: 1, count: 2 },
+      1: { startEpisode: 1, count: 5 },
     
     }
   },
@@ -69,13 +69,13 @@ const seriesConfig = {
     mediaType: 'tv',
     seasons: {
       1: { startEpisode: 1, count: 28 },
-      2: { startEpisode: 29, count: 18 }
+      2: { startEpisode: 29, count: 25 }
     }
   },
   	
-302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:11}}},
+302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:17}}},
 
-302063:{name:'tasacak-bu-deniz',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:15}}}};
+302063:{name:'tasacak-bu-deniz',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:19}}}};
 
 
 // ===================
