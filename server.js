@@ -49,7 +49,7 @@ const seriesConfig = {
     mediaType: 'tv',
     seasons: {
       1: { startEpisode: 1, count: 13 },
-      2: { startEpisode: 14, count: 18 }
+      2: { startEpisode: 14, count: 16 }
     }
   },
   306529: {
@@ -58,7 +58,7 @@ const seriesConfig = {
     urlPattern: 'https://hds.turkish123.com/abi-episode-{episode}/',
     mediaType: 'tv',
     seasons: {
-      1: { startEpisode: 1, count: 5 },
+      1: { startEpisode: 1, count: 2 },
     
     }
   },
@@ -69,13 +69,13 @@ const seriesConfig = {
     mediaType: 'tv',
     seasons: {
       1: { startEpisode: 1, count: 28 },
-      2: { startEpisode: 29, count: 25 }
+      2: { startEpisode: 29, count: 18 }
     }
   },
   	
-302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:17}}},
+302658:{name:'Kurlus Orhan',title:'Founder Orhan',urlPattern:'https://hds.turkish123.com/kurulus-orhan-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:11}}},
 
-302063:{name:'tasacak-bu-deniz',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:19}}}};
+302063:{name:'tasacak-bu-deniz',title:'Deep in Love',urlPattern:'https://hds.turkish123.com/tasacak-bu-deniz-episode-{episode}/',mediaType:'tv',seasons:{1:{startEpisode:1,count:15}}}};
 
 
 // ===================
@@ -223,6 +223,578 @@ async function sendTelegram(message) {
       resolve(false);
     }
   });
+}
+
+// ===================
+// TELEGRAM BOT
+// ===================
+let lastUpdateId = 0;
+
+// Fetch updates from Telegram
+async function getTelegramUpdates() {
+  return new Promise((resolve) => {
+    try {
+      const options = {
+        hostname: 'api.telegram.org',
+        port: 443,
+        path: `/bot${CONFIG.telegram.botToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`,
+        method: 'GET',
+        timeout: 35000
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          try {
+            const result = JSON.parse(data);
+            if (result.ok && result.result.length > 0) {
+              resolve(result.result);
+            } else {
+              resolve([]);
+            }
+          } catch (e) {
+            resolve([]);
+          }
+        });
+      });
+
+      req.on('error', () => resolve([]));
+      req.on('timeout', () => { req.destroy(); resolve([]); });
+      req.end();
+    } catch (e) {
+      resolve([]);
+    }
+  });
+}
+
+// Process bot commands
+async function processTelegramCommand(text, chatId) {
+  const parts = text.trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase().replace(/^\//, '');
+  const args = parts.slice(1);
+
+  log.info(`Bot command: /${cmd} ${args.join(' ')}`);
+
+  try {
+    switch (cmd) {
+      case 'start':
+        return `<b>👋 Welcome to Scraper Bot!</b>\n\n` +
+          `I help you manage your series and episodes without touching any code.\n\n` +
+          `<b>Quick Start:</b>\n` +
+          `• Send /cmds to see all commands\n` +
+          `• Send /list to see your series\n` +
+          `• Send /status to check server health\n\n` +
+          `💡 <b>Tip:</b> Each command shows usage examples if you use it wrong!\n\n` +
+          `Ready to get started? Send /cmds 🚀`;
+
+      case 'help':
+      case 'cmds':
+      case 'commands':
+        return `<b>🤖 All Commands</b>\n\n` +
+          `<b>📺 SERIES MANAGEMENT</b>\n` +
+          `/list - Show all tracked series\n` +
+          `/info <id> - Detailed series info\n` +
+          `/add <id> <name> <url> <type>\n` +
+          `/remove <id> - Delete a series\n\n` +
+          `<b>🎬 EPISODES</b>\n` +
+          `/episodes <id> <season>:<count>\n` +
+          `/check <id> - Find new episodes\n` +
+          `/checkall - Check all series\n\n` +
+          `<b>⏰ SCHEDULES</b>\n` +
+          `/schedule <id> <day> <hour>\n` +
+          `/unschedule <id>\n` +
+          `/schedules - View all schedules\n\n` +
+          `<b>🔄 CONTROL</b>\n` +
+          `/refresh - Re-scrape everything\n` +
+          `/status - Server health\n` +
+          `/help - Show this message\n\n` +
+          `💡 <b>Hint:</b> Just type a command to see examples!`;
+
+      case 'list':
+        return await cmdList();
+
+      case 'info':
+        if (!args[0]) {
+          return `❌ <b>Missing series ID</b>\n\n` +
+            `<b>Usage:</b>\n` +
+            `/info <id>\n\n` +
+            `<b>Example:</b>\n` +
+            `/info 283123\n\n` +
+            `💡 Use /list to see all series IDs`;
+        }
+        return await cmdInfo(args[0]);
+
+      case 'add':
+        if (args.length < 4) {
+          return `❌ <b>Missing parameters</b>\n\n` +
+            `<b>Usage:</b>\n` +
+            `/add <id> <name> <url> <type>\n\n` +
+            `<b>Example:</b>\n` +
+            `/add 283123 "Esref Ruya" "https://site.com/show-{episode}/" tv\n\n` +
+            `<b>Parameters:</b>\n` +
+            `• <b>id</b>: Unique series ID (numbers)\n` +
+            `• <b>name</b>: Series title\n` +
+            `• <b>url</b>: Must contain {episode}\n` +
+            `• <b>type</b>: tv or movie`;
+        }
+        return await cmdAdd(args);
+
+      case 'remove':
+        if (!args[0]) {
+          return `❌ <b>Missing series ID</b>\n\n` +
+            `<b>Usage:</b>\n` +
+            `/remove <id>\n\n` +
+            `<b>Example:</b>\n` +
+            `/remove 283123\n\n` +
+            `⚠️ This will permanently delete the series!`;
+        }
+        return await cmdRemove(args[0]);
+
+      case 'episodes':
+        if (args.length < 2) {
+          return `❌ <b>Missing parameters</b>\n\n` +
+            `<b>Usage:</b>\n` +
+            `/episodes <id> <season>:<count>\n\n` +
+            `<b>Examples:</b>\n` +
+            `/episodes 283123 1:45\n` +
+            `/episodes 274556 2:20\n\n` +
+            `<b>What it does:</b>\n` +
+            `Sets the episode count for a specific season`;
+        }
+        return await cmdEpisodes(args[0], args[1]);
+
+      case 'check':
+        if (!args[0]) {
+          return `❌ <b>Missing series ID</b>\n\n` +
+            `<b>Usage:</b>\n` +
+            `/check <id>\n\n` +
+            `<b>Example:</b>\n` +
+            `/check 283123\n\n` +
+            `<b>What it does:</b>\n` +
+            `Checks if new episodes are available and automatically scrapes them`;
+        }
+        return await cmdCheck(args[0]);
+
+      case 'checkall':
+        return await cmdCheckAll();
+
+      case 'schedule':
+        if (args.length < 3) {
+          return `❌ <b>Missing parameters</b>\n\n` +
+            `<b>Usage:</b>\n` +
+            `/schedule <id> <day> <hour>\n\n` +
+            `<b>Examples:</b>\n` +
+            `/schedule 283123 tue 15\n` +
+            `/schedule 274556 sun 3\n\n` +
+            `<b>Days:</b> sun, mon, tue, wed, thu, fri, sat\n` +
+            `<b>Hours:</b> 0-23 (24-hour format)\n\n` +
+            `<b>What it does:</b>\n` +
+            `Automatically checks for new episodes at the scheduled time`;
+        }
+        return await cmdSchedule(args[0], args[1], args[2]);
+
+      case 'unschedule':
+        if (!args[0]) {
+          return `❌ <b>Missing series ID</b>\n\n` +
+            `<b>Usage:</b>\n` +
+            `/unschedule <id>\n\n` +
+            `<b>Example:</b>\n` +
+            `/unschedule 283123\n\n` +
+            `<b>What it does:</b>\n` +
+            `Removes the auto-check schedule for this series`;
+        }
+        return await cmdUnschedule(args[0]);
+
+      case 'schedules':
+        return await cmdSchedules();
+
+      case 'refresh':
+        return await cmdRefresh();
+
+      case 'status':
+        return await cmdStatus();
+
+      default:
+        return `❌ Unknown command. Send /help for available commands.`;
+    }
+  } catch (error) {
+    log.error(`Command error: ${error.message}`);
+    return `❌ Error: ${error.message}`;
+  }
+}
+
+// Command handlers
+async function cmdList() {
+  if (Object.keys(seriesConfig).length === 0) {
+    return `📺 <b>No series found</b>\n\n` +
+      `Get started by adding a series:\n\n` +
+      `<b>Example:</b>\n` +
+      `/add 283123 "My Show" "https://site.com/episode-{episode}/" tv\n\n` +
+      `Type /add for usage help`;
+  }
+
+  const seriesList = Object.entries(seriesConfig).map(([id, s]) => {
+    const seasons = Object.keys(s.seasons).length;
+    const totalEps = Object.values(s.seasons).reduce((sum, season) => sum + season.count, 0);
+    const scheduled = episodeCheckSchedule[id] ? '⏰' : '';
+    return `${scheduled} <b>${s.title}</b>\n   ID: ${id} | ${seasons} season(s) | ${totalEps} episodes`;
+  }).join('\n\n');
+
+  return `<b>📺 All Series (${Object.keys(seriesConfig).length})</b>\n\n${seriesList}\n\n` +
+    `💡 Use /info <id> for details`;
+}
+
+async function cmdInfo(id) {
+  const series = seriesConfig[id];
+  if (!series) return `❌ Series ${id} not found`;
+
+  const schedule = episodeCheckSchedule[id];
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  
+  let info = `<b>📺 ${series.title}</b>\n\n`;
+  info += `🆔 ID: ${id}\n`;
+  info += `🎬 Type: ${series.mediaType}\n`;
+  info += `🔗 URL: ${series.urlPattern}\n\n`;
+  info += `<b>Seasons:</b>\n`;
+  
+  for (const [seasonNum, seasonData] of Object.entries(series.seasons)) {
+    info += `  S${seasonNum}: ${seasonData.count} episodes (starts at ${seasonData.startEpisode})\n`;
+  }
+  
+  if (schedule) {
+    info += `\n⏰ Auto-check: ${days[schedule.day]} at ${schedule.hour}:00`;
+  } else {
+    info += `\n⏰ Auto-check: Not scheduled`;
+  }
+
+  return info;
+}
+
+async function cmdAdd(args) {
+  const [id, name, url, type] = args;
+  
+  if (seriesConfig[id]) {
+    return `❌ <b>Series already exists</b>\n\n` +
+      `Series ${id} is already in your list.\n\n` +
+      `Use /info ${id} to view it\n` +
+      `Use /remove ${id} to delete it first`;
+  }
+
+  // Validate URL pattern
+  if (!url.includes('{episode}')) {
+    return `❌ <b>Invalid URL pattern</b>\n\n` +
+      `URL must contain {episode} placeholder\n\n` +
+      `<b>Example:</b>\n` +
+      `https://site.com/show-{episode}/\n\n` +
+      `The {episode} part will be replaced with episode numbers (1, 2, 3...)`;
+  }
+
+  // Validate type
+  if (type !== 'tv' && type !== 'movie') {
+    return `❌ <b>Invalid type</b>\n\n` +
+      `Type must be either:\n` +
+      `• <b>tv</b> - for TV series\n` +
+      `• <b>movie</b> - for movies`;
+  }
+
+  seriesConfig[id] = {
+    name: name,
+    title: name,
+    urlPattern: url,
+    mediaType: type,
+    seasons: {
+      1: { count: 0, startEpisode: 1 }
+    }
+  };
+
+  saveSeriesConfig();
+  
+  return `✅ <b>Series Added Successfully!</b>\n\n` +
+    `📺 ${name}\n` +
+    `🆔 ID: ${id}\n` +
+    `🎬 Type: ${type}\n\n` +
+    `<b>Next Steps:</b>\n` +
+    `1️⃣ Set episode count: /episodes ${id} 1:10\n` +
+    `2️⃣ Set auto-check: /schedule ${id} fri 15\n` +
+    `3️⃣ Check for episodes: /check ${id}`;
+}
+
+async function cmdRemove(id) {
+  if (!seriesConfig[id]) {
+    return `❌ Series ${id} not found`;
+  }
+
+  const name = seriesConfig[id].title;
+  delete seriesConfig[id];
+  delete episodeCheckSchedule[id];
+  saveSeriesConfig();
+
+  return `✅ Removed "${name}" (${id})`;
+}
+
+async function cmdEpisodes(id, seasonCount) {
+  const series = seriesConfig[id];
+  if (!series) return `❌ Series ${id} not found`;
+
+  const match = seasonCount.match(/^(\d+):(\d+)$/);
+  if (!match) return `❌ Format: <season>:<count>\nExample: 1:45`;
+
+  const season = parseInt(match[1]);
+  const count = parseInt(match[2]);
+
+  if (!series.seasons[season]) {
+    series.seasons[season] = { count: count, startEpisode: 1 };
+  } else {
+    series.seasons[season].count = count;
+  }
+
+  saveSeriesConfig();
+
+  return `✅ <b>Updated!</b>\n\n` +
+    `📺 ${series.title}\n` +
+    `📁 Season ${season}: ${count} episodes`;
+}
+
+async function cmdCheck(id) {
+  const series = seriesConfig[id];
+  if (!series) return `❌ Series ${id} not found`;
+
+  await sendTelegram(`🔍 Checking ${series.title} for new episodes...`);
+  
+  const results = await checkForNewEpisodes(parseInt(id));
+  const result = results[0];
+
+  if (result.status === 'updated') {
+    return `✅ <b>Check Complete!</b>\n\n` +
+      `📺 ${result.title}\n` +
+      `🆕 ${result.newEpisodes} new episode(s) found\n` +
+      `📁 Season ${result.season}: ${result.oldCount} → ${result.newCount}\n` +
+      `✅ Scraped: ${result.scraped}/${result.newEpisodes}`;
+  } else if (result.status === 'up_to_date') {
+    return `✅ ${series.title} is up to date (no new episodes)`;
+  } else {
+    return `❌ Check failed: ${result.error}`;
+  }
+}
+
+async function cmdCheckAll() {
+  const count = Object.keys(episodeCheckSchedule).length;
+  
+  if (count === 0) {
+    return `❌ <b>No scheduled series</b>\n\n` +
+      `You don't have any series with schedules set.\n\n` +
+      `<b>To check all series:</b>\n` +
+      `First add schedules with /schedule\n\n` +
+      `<b>To check a specific series:</b>\n` +
+      `Use /check <id> instead\n\n` +
+      `💡 Use /schedules to see scheduled series`;
+  }
+  
+  await sendTelegram(`🔍 Checking ${count} scheduled series for new episodes...`);
+  
+  const results = await checkForNewEpisodes();
+  const updated = results.filter(r => r.status === 'updated');
+  const errors = results.filter(r => r.status === 'error');
+  const upToDate = results.length - updated.length - errors.length;
+
+  let msg = `✅ <b>Check Complete!</b>\n\n`;
+  
+  if (updated.length > 0) {
+    msg += `🆕 <b>New Episodes Found:</b>\n`;
+    updated.forEach(r => {
+      msg += `  • ${r.title}: +${r.newEpisodes} ep (S${r.season})\n`;
+    });
+    msg += '\n';
+  } else {
+    msg += `✅ All series are up to date!\n\n`;
+  }
+  
+  msg += `<b>Summary:</b>\n`;
+  msg += `📊 Checked: ${results.length}\n`;
+  msg += `✅ Up to date: ${upToDate}\n`;
+  if (updated.length > 0) msg += `🆕 Updated: ${updated.length}\n`;
+  if (errors.length > 0) msg += `❌ Errors: ${errors.length}\n`;
+  
+  if (errors.length > 0) {
+    msg += `\n⚠️ Some checks failed. Use /check <id> to retry specific series.`;
+  }
+
+  return msg;
+}
+
+async function cmdSchedule(id, dayStr, hourStr) {
+  const series = seriesConfig[id];
+  if (!series) return `❌ Series ${id} not found`;
+
+  const days = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+  const day = days[dayStr.toLowerCase()];
+  const hour = parseInt(hourStr);
+
+  if (day === undefined) {
+    return `❌ Invalid day. Use: sun, mon, tue, wed, thu, fri, sat`;
+  }
+  if (isNaN(hour) || hour < 0 || hour > 23) {
+    return `❌ Invalid hour. Use 0-23`;
+  }
+
+  episodeCheckSchedule[id] = {
+    name: series.title,
+    day: day,
+    hour: hour
+  };
+
+  saveSeriesConfig();
+
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return `✅ <b>Schedule Set!</b>\n\n` +
+    `📺 ${series.title}\n` +
+    `⏰ ${dayNames[day]} at ${hour}:00`;
+}
+
+async function cmdUnschedule(id) {
+  const series = seriesConfig[id];
+  if (!series) return `❌ Series ${id} not found`;
+
+  if (!episodeCheckSchedule[id]) {
+    return `❌ No schedule set for ${series.title}`;
+  }
+
+  delete episodeCheckSchedule[id];
+  saveSeriesConfig();
+
+  return `✅ Schedule removed for ${series.title}`;
+}
+
+async function cmdSchedules() {
+  if (Object.keys(episodeCheckSchedule).length === 0) {
+    return `📅 <b>No Scheduled Checks</b>\n\n` +
+      `You haven't set up any auto-check schedules yet.\n\n` +
+      `<b>Example:</b>\n` +
+      `/schedule 283123 fri 15\n\n` +
+      `This will automatically check for new episodes every Friday at 3 PM.\n\n` +
+      `Type /schedule for usage help`;
+  }
+
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const now = new Date();
+  const currentDay = now.getDay();
+  const currentHour = now.getHours();
+  
+  let msg = `<b>📅 Scheduled Auto-Checks (${Object.keys(episodeCheckSchedule).length})</b>\n\n`;
+
+  for (const [id, schedule] of Object.entries(episodeCheckSchedule)) {
+    const isToday = schedule.day === currentDay;
+    const isPast = isToday && schedule.hour < currentHour;
+    const isCurrent = isToday && schedule.hour === currentHour;
+    
+    let indicator = '';
+    if (isCurrent) indicator = '🔴 ';
+    else if (isToday && !isPast) indicator = '🟡 ';
+    
+    msg += `${indicator}<b>${schedule.name}</b>\n`;
+    msg += `   ⏰ ${dayNames[schedule.day]} at ${schedule.hour}:00`;
+    
+    if (isCurrent) msg += ` (Running now!)`;
+    else if (isToday && !isPast) msg += ` (Today!)`;
+    
+    msg += `\n   🆔 ID: ${id}\n\n`;
+  }
+  
+  msg += `💡 Use /unschedule <id> to remove a schedule`;
+
+  return msg;
+}
+
+async function cmdRefresh() {
+  if (state.isRefreshing) {
+    const progress = state.stats.success + state.stats.failed;
+    return `⏳ <b>Refresh Already Running</b>\n\n` +
+      `📊 Progress: ${progress} episodes processed\n` +
+      `✅ Success: ${state.stats.success}\n` +
+      `❌ Failed: ${state.stats.failed}\n\n` +
+      `Please wait for it to complete. You'll get a notification when done.`;
+  }
+
+  const totalSeries = Object.keys(seriesConfig).length;
+  const totalEps = Object.values(seriesConfig).reduce((sum, s) => {
+    return sum + Object.values(s.seasons).reduce((sSum, season) => sSum + season.count, 0);
+  }, 0);
+
+  refreshAllEpisodes(true);
+  
+  return `🔄 <b>Refresh Started!</b>\n\n` +
+    `📺 Series: ${totalSeries}\n` +
+    `🎬 Total Episodes: ${totalEps}\n\n` +
+    `⏱ This will take a while (approx ${Math.ceil(totalEps / 60)} minutes)\n\n` +
+    `You'll get a notification when it's complete.\n\n` +
+    `💡 Use /status to check progress`;
+}
+
+async function cmdStatus() {
+  const mem = process.memoryUsage();
+  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const rssMB = Math.round(mem.rss / 1024 / 1024);
+  const uptime = Math.floor(process.uptime() / 3600);
+
+  let msg = `<b>📊 Server Status</b>\n\n`;
+  msg += `🟢 Running: ${uptime}h\n`;
+  msg += `💾 Memory: ${heapMB}MB heap, ${rssMB}MB total\n`;
+  msg += `📺 Series: ${Object.keys(seriesConfig).length}\n`;
+  msg += `⏰ Scheduled: ${Object.keys(episodeCheckSchedule).length}\n\n`;
+
+  if (state.isRefreshing) {
+    msg += `🔄 Status: <b>Refreshing...</b>\n`;
+    msg += `✅ Success: ${state.stats.success}\n`;
+    msg += `❌ Failed: ${state.stats.failed}`;
+  } else {
+    msg += `🔄 Status: Idle\n`;
+    if (state.lastRefreshTime) {
+      const lastRefresh = Math.floor((Date.now() - state.lastRefreshTime) / 60000);
+      msg += `⏱ Last refresh: ${lastRefresh}m ago\n`;
+    }
+    if (state.nextRefreshTime) {
+      const nextRefresh = Math.floor((state.nextRefreshTime - Date.now()) / 60000);
+      msg += `⏭ Next refresh: ${nextRefresh}m`;
+    }
+  }
+
+  return msg;
+}
+
+// Bot polling loop
+async function startTelegramBot() {
+  log.info('Telegram bot started');
+  
+  const poll = async () => {
+    try {
+      const updates = await getTelegramUpdates();
+      
+      for (const update of updates) {
+        lastUpdateId = update.update_id;
+        
+        if (update.message && update.message.text && update.message.text.startsWith('/')) {
+          const chatId = update.message.chat.id;
+          
+          // Only respond to authorized chat
+          if (chatId.toString() !== CONFIG.telegram.chatId) {
+            log.warn(`Unauthorized bot access from ${chatId}`);
+            continue;
+          }
+
+          const response = await processTelegramCommand(update.message.text, chatId);
+          await sendTelegram(response);
+        }
+      }
+    } catch (error) {
+      log.error(`Bot polling error: ${error.message}`);
+    }
+    
+    // Continue polling
+    setTimeout(poll, 1000);
+  };
+
+  poll();
 }
 
 // ===================
@@ -605,8 +1177,12 @@ const CONFIG_FILE = '/tmp/series_config.json';
 
 function saveSeriesConfig() {
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(seriesConfig, null, 2));
-    log.success('Series config saved to disk');
+    const data = {
+      series: seriesConfig,
+      schedules: episodeCheckSchedule
+    };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
+    log.success('Config saved to disk');
   } catch (e) {
     log.error(`Failed to save config: ${e.message}`);
   }
@@ -616,13 +1192,35 @@ function loadSeriesConfig() {
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      // Merge saved counts into current config
-      for (const id in saved) {
-        if (seriesConfig[id]) {
-          seriesConfig[id].seasons = saved[id].seasons;
+      
+      // Handle old format (just series object)
+      if (saved.series) {
+        // New format with series and schedules
+        for (const id in saved.series) {
+          if (seriesConfig[id]) {
+            seriesConfig[id].seasons = saved.series[id].seasons;
+          } else {
+            // Add completely new series from saved config
+            seriesConfig[id] = saved.series[id];
+          }
+        }
+        
+        // Load schedules
+        if (saved.schedules) {
+          for (const id in saved.schedules) {
+            episodeCheckSchedule[id] = saved.schedules[id];
+          }
+        }
+      } else {
+        // Old format - just merge seasons
+        for (const id in saved) {
+          if (seriesConfig[id]) {
+            seriesConfig[id].seasons = saved[id].seasons;
+          }
         }
       }
-      log.success('Series config loaded from disk');
+      
+      log.success('Config loaded from disk');
     }
   } catch (e) {
     log.warn(`Failed to load config: ${e.message}`);
@@ -1199,6 +1797,9 @@ const server = app.listen(CONFIG.port, () => {
   
   // Start daily episode check scheduler
   scheduleDailyEpisodeCheck();
+  
+  // Start Telegram bot
+  startTelegramBot();
   
   // Send startup notification
   sendTelegram(telegram.startup());
