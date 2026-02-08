@@ -10,6 +10,7 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const { exec } = require('child_process');
+const { MongoClient } = require('mongodb');
 
 // ===================
 // CONFIGURATION
@@ -25,6 +26,11 @@ const CONFIG = {
   telegram: {
     botToken: '8591460817:AAFfvWMhzzdVSyQNQ-yTz_gh8JRpilaWYUY',
     chatId: '8254382347'
+  },
+  mongodb: {
+    uri: process.env.MONGODB_URI || 'mongodb+srv://theadnan4a:Wearefaimly1@flixstream.u4avnvo.mongodb.net/scraper?retryWrites=true&w=majority',
+    database: 'scraper',
+    collection: 'series_config'
   },
   maxConcurrentPages: 1,  // Sequential for stability on free tier
   batchSize: 1            // One at a time to prevent memory issues
@@ -798,6 +804,152 @@ async function startTelegramBot() {
 }
 
 // ===================
+// MONGODB
+// ===================
+let mongoClient = null;
+let mongodb = null;
+
+async function connectMongoDB() {
+  if (mongodb) return mongodb;
+  
+  try {
+    log.info('Connecting to MongoDB...');
+    mongoClient = new MongoClient(CONFIG.mongodb.uri);
+    await mongoClient.connect();
+    mongodb = mongoClient.db(CONFIG.mongodb.database);
+    log.success('MongoDB connected');
+    return mongodb;
+  } catch (error) {
+    log.error(`MongoDB connection failed: ${error.message}`);
+    return null;
+  }
+}
+
+async function saveConfigToMongoDB() {
+  try {
+    const db = await connectMongoDB();
+    if (!db) {
+      log.warn('MongoDB not available, falling back to file');
+      return saveConfigToFile();
+    }
+
+    const collection = db.collection(CONFIG.mongodb.collection);
+    const configData = {
+      _id: 'main_config',
+      series: seriesConfig,
+      schedules: episodeCheckSchedule,
+      lastUpdated: new Date()
+    };
+
+    await collection.replaceOne(
+      { _id: 'main_config' },
+      configData,
+      { upsert: true }
+    );
+
+    log.success('Config saved to MongoDB');
+    
+    // Also save to file as backup
+    saveConfigToFile();
+    
+    return true;
+  } catch (error) {
+    log.error(`MongoDB save failed: ${error.message}`);
+    // Fallback to file
+    return saveConfigToFile();
+  }
+}
+
+async function loadConfigFromMongoDB() {
+  try {
+    const db = await connectMongoDB();
+    if (!db) {
+      log.warn('MongoDB not available, loading from file');
+      return loadConfigFromFile();
+    }
+
+    const collection = db.collection(CONFIG.mongodb.collection);
+    const saved = await collection.findOne({ _id: 'main_config' });
+
+    if (saved && saved.series) {
+      // Load series
+      for (const id in saved.series) {
+        if (seriesConfig[id]) {
+          seriesConfig[id].seasons = saved.series[id].seasons;
+        } else {
+          // Add completely new series from MongoDB
+          seriesConfig[id] = saved.series[id];
+        }
+      }
+
+      // Load schedules
+      if (saved.schedules) {
+        for (const id in saved.schedules) {
+          episodeCheckSchedule[id] = saved.schedules[id];
+        }
+      }
+
+      log.success(`Config loaded from MongoDB (updated: ${saved.lastUpdated?.toISOString() || 'unknown'})`);
+      return true;
+    } else {
+      log.info('No config in MongoDB, loading from file');
+      return loadConfigFromFile();
+    }
+  } catch (error) {
+    log.error(`MongoDB load failed: ${error.message}`);
+    // Fallback to file
+    return loadConfigFromFile();
+  }
+}
+
+// File-based fallback functions
+function saveConfigToFile() {
+  try {
+    const data = {
+      series: seriesConfig,
+      schedules: episodeCheckSchedule
+    };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
+    log.success('Config saved to file (backup)');
+    return true;
+  } catch (e) {
+    log.error(`File save failed: ${e.message}`);
+    return false;
+  }
+}
+
+function loadConfigFromFile() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      
+      if (saved.series) {
+        for (const id in saved.series) {
+          if (seriesConfig[id]) {
+            seriesConfig[id].seasons = saved.series[id].seasons;
+          } else {
+            seriesConfig[id] = saved.series[id];
+          }
+        }
+        
+        if (saved.schedules) {
+          for (const id in saved.schedules) {
+            episodeCheckSchedule[id] = saved.schedules[id];
+          }
+        }
+      }
+      
+      log.success('Config loaded from file');
+      return true;
+    }
+    return false;
+  } catch (e) {
+    log.warn(`File load failed: ${e.message}`);
+    return false;
+  }
+}
+
+// ===================
 // BROWSER MANAGEMENT
 // ===================
 let browserLock = false;
@@ -1175,56 +1327,17 @@ async function refreshAllEpisodes(isManual = false) {
 // ===================
 const CONFIG_FILE = '/tmp/series_config.json';
 
+// Wrapper functions that use MongoDB with file fallback
 function saveSeriesConfig() {
-  try {
-    const data = {
-      series: seriesConfig,
-      schedules: episodeCheckSchedule
-    };
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(data, null, 2));
-    log.success('Config saved to disk');
-  } catch (e) {
-    log.error(`Failed to save config: ${e.message}`);
-  }
+  saveConfigToMongoDB().catch(err => {
+    log.error(`Save config error: ${err.message}`);
+  });
 }
 
-function loadSeriesConfig() {
-  try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      
-      // Handle old format (just series object)
-      if (saved.series) {
-        // New format with series and schedules
-        for (const id in saved.series) {
-          if (seriesConfig[id]) {
-            seriesConfig[id].seasons = saved.series[id].seasons;
-          } else {
-            // Add completely new series from saved config
-            seriesConfig[id] = saved.series[id];
-          }
-        }
-        
-        // Load schedules
-        if (saved.schedules) {
-          for (const id in saved.schedules) {
-            episodeCheckSchedule[id] = saved.schedules[id];
-          }
-        }
-      } else {
-        // Old format - just merge seasons
-        for (const id in saved) {
-          if (seriesConfig[id]) {
-            seriesConfig[id].seasons = saved[id].seasons;
-          }
-        }
-      }
-      
-      log.success('Config loaded from disk');
-    }
-  } catch (e) {
-    log.warn(`Failed to load config: ${e.message}`);
-  }
+async function loadSeriesConfig() {
+  await loadConfigFromMongoDB().catch(err => {
+    log.error(`Load config error: ${err.message}`);
+  });
 }
 
 // ===================
@@ -1783,7 +1896,7 @@ setInterval(async () => {
 // ===================
 // SERVER STARTUP
 // ===================
-const server = app.listen(CONFIG.port, () => {
+const server = app.listen(CONFIG.port, async () => {
   log.info(`========================================`);
   log.info(`SCRAPPER SERVER STARTED`);
   log.info(`Port: ${CONFIG.port}`);
@@ -1792,8 +1905,10 @@ const server = app.listen(CONFIG.port, () => {
   log.info(`GC available: ${!!global.gc}`);
   log.info(`========================================`);
 
-  // Load saved series config (episode counts)
-  loadSeriesConfig();
+  // Load saved series config from MongoDB (episode counts)
+  await loadSeriesConfig();
+  
+  log.info(`Loaded ${Object.keys(seriesConfig).length} series`);
   
   // Start daily episode check scheduler
   scheduleDailyEpisodeCheck();
@@ -1815,6 +1930,10 @@ const server = app.listen(CONFIG.port, () => {
 process.on('SIGTERM', async () => {
   log.info('SIGTERM received, shutting down...');
   await cleanupBrowser();
+  if (mongoClient) {
+    await mongoClient.close();
+    log.info('MongoDB disconnected');
+  }
   server.close(() => {
     log.info('Server closed');
     process.exit(0);
@@ -1824,6 +1943,10 @@ process.on('SIGTERM', async () => {
 process.on('SIGINT', async () => {
   log.info('SIGINT received, shutting down...');
   await cleanupBrowser();
+  if (mongoClient) {
+    await mongoClient.close();
+    log.info('MongoDB disconnected');
+  }
   server.close(() => {
     log.info('Server closed');
     process.exit(0);
