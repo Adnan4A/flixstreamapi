@@ -314,6 +314,7 @@ async function processTelegramCommand(text, chatId) {
           `<b>🔄 CONTROL</b>\n` +
           `/refresh - Re-scrape everything\n` +
           `/status - Server health\n` +
+          `/migrate - Save all to MongoDB\n` +
           `/help - Show this message\n\n` +
           `💡 <b>Hint:</b> Just type a command to see examples!`;
 
@@ -420,6 +421,9 @@ async function processTelegramCommand(text, chatId) {
 
       case 'status':
         return await cmdStatus();
+
+      case 'migrate':
+        return await cmdMigrate();
 
       default:
         return `❌ Unknown command. Send /help for available commands.`;
@@ -768,6 +772,63 @@ async function cmdStatus() {
   return msg;
 }
 
+async function cmdMigrate() {
+  try {
+    const db = await connectMongoDB();
+    if (!db) {
+      return `❌ <b>MongoDB Not Available</b>\n\n` +
+        `Cannot migrate without MongoDB connection.\n\n` +
+        `Please check your MongoDB Atlas settings.`;
+    }
+
+    await sendTelegram(`🔄 <b>Migration Started...</b>\n\nSaving all series and schedules to MongoDB...`);
+
+    // Force save everything to MongoDB
+    const collection = db.collection(CONFIG.mongodb.collection);
+    const configData = {
+      _id: 'main_config',
+      series: seriesConfig,
+      schedules: episodeCheckSchedule,
+      lastUpdated: new Date(),
+      migrated: true
+    };
+
+    await collection.replaceOne(
+      { _id: 'main_config' },
+      configData,
+      { upsert: true }
+    );
+
+    // Also save to file as backup
+    saveConfigToFile();
+
+    const seriesCount = Object.keys(seriesConfig).length;
+    const schedulesCount = Object.keys(episodeCheckSchedule).length;
+    const totalEpisodes = Object.values(seriesConfig).reduce((sum, s) => {
+      return sum + Object.values(s.seasons).reduce((sSum, season) => sSum + season.count, 0);
+    }, 0);
+
+    return `✅ <b>Migration Complete!</b>\n\n` +
+      `<b>Saved to MongoDB:</b>\n` +
+      `📺 Series: ${seriesCount}\n` +
+      `📁 Total Episodes: ${totalEpisodes}\n` +
+      `⏰ Schedules: ${schedulesCount}\n` +
+      `💾 Backup: File saved\n\n` +
+      `<b>Benefits:</b>\n` +
+      `✅ Survives all Railway restarts\n` +
+      `✅ Survives full redeploys\n` +
+      `✅ Never loses data\n` +
+      `✅ Cloud-based storage\n\n` +
+      `🎉 All your series are now safe in MongoDB!`;
+
+  } catch (error) {
+    log.error(`Migration error: ${error.message}`);
+    return `❌ <b>Migration Failed</b>\n\n` +
+      `Error: ${error.message}\n\n` +
+      `Your data is still safe in the file backup.`;
+  }
+}
+
 // Bot polling loop
 async function startTelegramBot() {
   log.info('Telegram bot started');
@@ -872,24 +933,50 @@ async function loadConfigFromMongoDB() {
     const saved = await collection.findOne({ _id: 'main_config' });
 
     if (saved && saved.series) {
-      // Load series
-      for (const id in saved.series) {
-        if (seriesConfig[id]) {
-          seriesConfig[id].seasons = saved.series[id].seasons;
-        } else {
-          // Add completely new series from MongoDB
+      // If data was migrated, replace everything with MongoDB data
+      if (saved.migrated) {
+        log.info('Loading fully migrated config from MongoDB...');
+        
+        // Clear current config and use MongoDB as source of truth
+        for (const key in seriesConfig) {
+          delete seriesConfig[key];
+        }
+        for (const key in episodeCheckSchedule) {
+          delete episodeCheckSchedule[key];
+        }
+        
+        // Load all series from MongoDB
+        for (const id in saved.series) {
           seriesConfig[id] = saved.series[id];
         }
-      }
-
-      // Load schedules
-      if (saved.schedules) {
-        for (const id in saved.schedules) {
-          episodeCheckSchedule[id] = saved.schedules[id];
+        
+        // Load all schedules from MongoDB
+        if (saved.schedules) {
+          for (const id in saved.schedules) {
+            episodeCheckSchedule[id] = saved.schedules[id];
+          }
         }
-      }
+        
+        log.success(`✅ Migrated config loaded from MongoDB (${Object.keys(saved.series).length} series)`);
+      } else {
+        // Old behavior: merge with hardcoded series
+        for (const id in saved.series) {
+          if (seriesConfig[id]) {
+            seriesConfig[id].seasons = saved.series[id].seasons;
+          } else {
+            seriesConfig[id] = saved.series[id];
+          }
+        }
 
-      log.success(`Config loaded from MongoDB (updated: ${saved.lastUpdated?.toISOString() || 'unknown'})`);
+        if (saved.schedules) {
+          for (const id in saved.schedules) {
+            episodeCheckSchedule[id] = saved.schedules[id];
+          }
+        }
+        
+        log.success(`Config loaded from MongoDB (updated: ${saved.lastUpdated?.toISOString() || 'unknown'})`);
+      }
+      
       return true;
     } else {
       log.info('No config in MongoDB, loading from file');
